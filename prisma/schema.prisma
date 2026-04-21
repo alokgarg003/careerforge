@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,20 +7,174 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ============================================
+// PROFILE - User's personal career profile
+// ============================================
+model Profile {
+  id                   String   @id @default(cuid())
+  name                 String   @default("Alok Garg")
+  email                String   @unique
+  currentRole          String   @default("Application Support Engineer")
+  currentCompany       String   @default("Capgemini")
+  location             String   @default("Noida, India")
+  experienceYears      Float    @default(1.5)
+  phone                String?
+  linkedinUrl          String?
+  githubUrl            String?
+  resumeText           String   @default("")
+  resumeFile           String?
+  summary              String   @default("")
+  primarySkills        String   @default("linux,shell,bash,python,jenkins,bitbucket,azure,aws,terraform,servicenow,itil,goanywhere,mft,sftp,ftps,ftp,as2,monitoring,alerting,log_analysis,ci_cd,automation,cloudops")
+  secondarySkills      String   @default("java,spring boot,rest api,microservices,docker,kubernetes,observability,grafana,prometheus")
+  excludeSignals       String   @default("frontend,react,vue,angular,ux,ui,dsa,competitive programming")
+  targetRoles          String   @default("Application Support Engineer,Production Support Engineer,L2 Application Support,Platform Support Engineer,MFT Support Engineer,GoAnywhere MFT Support,Cloud Support Engineer,DevOps Support Engineer,Infrastructure Support,Cloud Operations,Operations Support Engineer")
+  preferredLocations   String   @default("Noida,Delhi NCR,Jaipur,Remote,Bangalore")
+  salaryMin            Float    @default(18)
+  salaryMax            Float    @default(45)
+  salaryCurrency       String   @default("LPA")
+  education            String   @default("PG Diploma (DAC) CDAC Bangalore 2024, B.Tech CSE Poornima Institute 2019-2023")
+  certifications       String   @default("Azure AI Engineer Associate (AI102),Azure AI Fundamentals,AWS Generative AI,React-Redux")
+  achievements         String   @default("Resolved 150+ ServiceNow tickets weekly,Reduced false alerts by 50%,Built Snow Incident AI analytics platform")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  applications Application[]
+  matches      JobMatch[]
+  searches     SavedSearch[]
 }
 
-model Post {
+// ============================================
+// COMPANY - Target company database
+// ============================================
+model Company {
+  id            String   @id @default(cuid())
+  name          String
+  industry      String   @default("")
+  sector        String   @default("IT Consulting")
+  tier          Int      @default(3)
+  hqLocation    String   @default("")
+  ncrOffice     String   @default("")
+  employeeCount String   @default("")
+  careerPageUrl String   @default("")
+  linkedinUrl   String   @default("")
+  salaryRange   String   @default("")
+  notes         String   @default("")
+  priority      Int      @default(3)
+  status        String   @default("targeted")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  jobs Job[]
+}
+
+// ============================================
+// JOB - Discovered job listings
+// ============================================
+model Job {
+  id               String   @id @default(cuid())
+  externalId       String   @default("")
+  source           String   @default("web_search")
+  title            String
+  companyName      String   @default("")
+  location         String   @default("")
+  url              String   @default("")
+  description      String   @default("")
+  jobType          String   @default("Full-time")
+  experienceRange  String   @default("")
+  salaryMin        Float?
+  salaryMax        Float?
+  salaryCurrency   String   @default("")
+  isRemote         Boolean  @default(false)
+  workMode         String   @default("Onsite")
+  skills           String   @default("")
+  companyIndustry  String   @default("")
+  datePosted       String   @default("")
+  dateScraped      DateTime @default(now())
+  status           String   @default("new")
+  notes            String   @default("")
+  companyId        String?
+  company          Company? @relation(fields: [companyId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  match     JobMatch?
+  applications Application[]
+}
+
+// ============================================
+// JOB MATCH - AI-powered match analysis
+// ============================================
+model JobMatch {
+  id              String   @id @default(cuid())
+  jobId           String   @unique
+  job             Job      @relation(fields: [jobId], references: [id])
+  profileId       String   @default("default")
+  profile         Profile? @relation(fields: [profileId], references: [id])
+  score           Int      @default(0)
+  alignment       String   @default("Ignore")
+  matchingSkills  String   @default("")
+  missingSkills   String   @default("")
+  matchReasons    String   @default("")
+  whyFits         String   @default("")
+  tailoredResume  String   @default("")
+  coverLetter     String   @default("")
+  interviewQa     String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================
+// APPLICATION - Job application tracking
+// ============================================
+model Application {
+  id          String   @id @default(cuid())
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id])
+  profileId   String   @default("default")
+  profile     Profile? @relation(fields: [profileId], references: [id])
+  status      String   @default("interested")
+  priority    String   @default("medium")
+  appliedAt   DateTime?
+  interviewAt DateTime?
+  responseAt  DateTime?
+  offerAmount String?
+  notes       String   @default("")
+  hrContact   String   @default("")
+  hrEmail     String   @default("")
+  hrPhone     String   @default("")
+  platform    String   @default("")
+  followedUp  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// SAVED SEARCH - Saved search configurations
+// ============================================
+model SavedSearch {
+  id         String   @id @default(cuid())
+  profileId  String   @default("default")
+  profile    Profile? @relation(fields: [profileId], references: [id])
+  name       String   @default("")
+  query      String   @default("")
+  location   String   @default("")
+  sites      String   @default("")
+  isActive   Boolean  @default(true)
+  lastRunAt  DateTime?
+  resultsCount Int    @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ============================================
+// ACTIVITY LOG - Recent actions tracking
+// ============================================
+model ActivityLog {
   id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
+  type      String   @default("info")
+  action    String   @default("")
+  detail    String   @default("")
+  jobId     String?
+  companyId String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
