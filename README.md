@@ -1,13 +1,11 @@
-<p align="center">
-  <img src="public/logo.svg" alt="CareerForge Logo" width="80" height="80"/>
-</p>
-
-<h1 align="center">CareerForge</h1>
+<p align="center"><img src="public/logo.svg" alt="CareerForge Logo" width="80" height="80"/></p><h1 align="center">CareerForge</h1>
 
 <p align="center">
   <strong>Unified Personal Career Intelligence Platform</strong><br/>
-  AI-powered job discovery, intelligent matching & application tracking
+  🚀 AI-powered job search engine with intelligent matching algorithm, application tracking system, resume tailoring, and career analytics dashboard. The complete career management tool for modern job seekers.
 </p>
+
+> **Keywords:** job search platform, AI job matching, career intelligence, application tracker, resume builder, job discovery, career analytics, Next.js app, TypeScript project, full-stack development
 
 <p align="center">
   <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js"/>
@@ -18,6 +16,8 @@
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License"/>
   <img src="https://github.com/alokgarg003/careerforge/actions/workflows/ci.yml/badge.svg" alt="CI"/>
 </p>
+
+> **Keywords:** job search platform, AI job matching, career intelligence, application tracker, resume builder, job discovery, career analytics, Next.js app, TypeScript project, full-stack development
 
 <p align="center">
   <a href="#features">Features</a> •
@@ -277,5 +277,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 </p>
 #   c a r e e r f o r g e 
  
-#   c a r e e r f o r g e  
+#   c a r e e r f o r g e 
  
+
+
+
