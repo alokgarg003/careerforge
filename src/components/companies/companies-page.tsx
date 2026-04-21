@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -63,6 +63,7 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 // ─── Types ──────────────────────────────────────────────────────
 type CompanyTier = 1 | 2 | 3 | 4 | 5 | 6;
@@ -878,7 +879,7 @@ function CompanyDetailDialog({
 
 // ─── Main Component ─────────────────────────────────────────────
 export default function CompaniesPage() {
-  const [companies, setCompanies] = useState<Company[]>(initialCompanies);
+  const [dbCompanies, setDbCompanies] = useState<Company[] | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [tierFilter, setTierFilter] = useState('all');
@@ -888,6 +889,8 @@ export default function CompaniesPage() {
   const [detailCompany, setDetailCompany] = useState<Company | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const companies = dbCompanies || initialCompanies;
 
   // Stats
   const stats = useMemo(() => ({
@@ -922,13 +925,80 @@ export default function CompaniesPage() {
     return result;
   }, [companies, searchQuery, tierFilter, statusFilter, sortBy, sortDir]);
 
+  const loadCompanies = useCallback(async () => {
+    try {
+      const res = await fetch('/api/companies');
+      if (!res.ok) throw new Error('Failed to fetch');
+      const raw = await res.json();
+      const list = Array.isArray(raw) ? raw : (raw.companies || []);
+      const mapped: Company[] = list.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        industry: c.industry || '',
+        sectors: c.sector ? c.sector.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+        tier: c.tier as CompanyTier,
+        location: c.hqLocation || '',
+        locations: c.ncrOffice ? [c.ncrOffice] : [],
+        employeeCount: c.employeeCount || '',
+        salaryRange: c.salaryRange || '',
+        priority: c.priority,
+        status: (c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : 'Targeted') as CompanyStatus,
+        careerPage: c.careerPageUrl || '',
+        linkedinPage: c.linkedinUrl || '',
+        notes: c.notes || '',
+        applicationIds: [],
+      }));
+      setDbCompanies(mapped);
+    } catch (err) {
+      console.error('Failed to load companies:', err);
+      setDbCompanies(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCompanies();
+  }, [loadCompanies]);
+
   // Handlers
-  const handleSave = (updated: Company) => {
-    setCompanies(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+  const handleSave = async (updated: Company) => {
+    try {
+      const payload = {
+        name: updated.name,
+        industry: updated.industry,
+        sector: updated.sectors.join(', '),
+        tier: updated.tier,
+        hqLocation: updated.location,
+        ncrOffice: updated.locations[0] || '',
+        employeeCount: updated.employeeCount,
+        careerPageUrl: updated.careerPage,
+        linkedinUrl: updated.linkedinPage,
+        salaryRange: updated.salaryRange,
+        notes: updated.notes,
+        priority: updated.priority,
+        status: updated.status.toLowerCase(),
+      };
+      const res = await fetch(`/api/companies/${updated.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      toast.success('Company updated');
+      loadCompanies();
+    } catch {
+      toast.error('Failed to save company');
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setCompanies(prev => prev.filter(c => c.id !== id));
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`/api/companies/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete');
+      toast.success('Company deleted');
+      loadCompanies();
+    } catch {
+      toast.error('Failed to delete company');
+    }
   };
 
   const handleView = (c: Company) => {

@@ -9,42 +9,78 @@ import {
   Sparkles,
   Briefcase,
   Search,
-  Bell,
   Menu,
   X,
   LayoutDashboard,
+  Target,
+  Building2,
+  ClipboardList,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import { DashboardPage } from '@/components/dashboard/dashboard-page'
+import { JobsPage } from '@/components/jobs/jobs-page'
+import ApplicationsPage from '@/components/applications/applications-page'
+import CompaniesPage from '@/components/companies/companies-page'
 import ResumePage from '@/components/resume/resume-page'
 import AnalyticsPage from '@/components/analytics/analytics-page'
 import SettingsPage from '@/components/settings/settings-page'
 
 // ── Page Registry ──────────────────────────────────────────
 
-type PageId = 'resume' | 'analytics' | 'settings'
+type PageId = 'dashboard' | 'jobs' | 'applications' | 'companies' | 'resume' | 'analytics' | 'settings'
 
 interface NavItem {
   id: PageId
   label: string
   icon: React.ElementType
   description: string
+  badge?: string
+  badgeColor?: string
 }
 
 const NAV_ITEMS: NavItem[] = [
   {
+    id: 'dashboard',
+    label: 'Dashboard',
+    icon: LayoutDashboard,
+    description: 'Career intelligence overview',
+  },
+  {
+    id: 'jobs',
+    label: 'Job Discovery',
+    icon: Search,
+    description: 'Find and analyze matching jobs',
+    badge: 'AI',
+    badgeColor: 'bg-emerald-600',
+  },
+  {
+    id: 'applications',
+    label: 'Applications',
+    icon: ClipboardList,
+    description: 'Track your job applications',
+  },
+  {
+    id: 'companies',
+    label: 'Companies',
+    icon: Building2,
+    description: 'Target company database',
+  },
+  {
     id: 'resume',
     label: 'Resume Intelligence',
     icon: FileText,
-    description: 'AI-powered resume analysis & tailoring',
+    description: 'AI-powered resume tools',
+    badge: 'AI',
+    badgeColor: 'bg-emerald-600',
   },
   {
     id: 'analytics',
-    label: 'Analytics & Insights',
+    label: 'Analytics',
     icon: BarChart3,
-    description: 'Job search performance tracking',
+    description: 'Job search performance',
   },
   {
     id: 'settings',
@@ -71,7 +107,6 @@ function MobileSidebar({
     <AnimatePresence>
       {open && (
         <>
-          {/* Overlay */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -79,13 +114,12 @@ function MobileSidebar({
             className="fixed inset-0 z-40 bg-black/50 lg:hidden"
             onClick={onClose}
           />
-          {/* Panel */}
           <motion.div
             initial={{ x: -280 }}
             animate={{ x: 0 }}
             exit={{ x: -280 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed left-0 top-0 bottom-0 z-50 w-[280px] bg-background border-r p-4 lg:hidden"
+            className="fixed left-0 top-0 bottom-0 z-50 w-[280px] bg-background border-r p-4 lg:hidden overflow-y-auto"
           >
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
@@ -117,8 +151,13 @@ function MobileSidebar({
                     )}
                   >
                     <Icon className="size-4 shrink-0" />
-                    <div>
+                    <div className="flex items-center gap-2">
                       <div>{item.label}</div>
+                      {item.badge && (
+                        <span className={cn('text-white text-[10px] px-1.5 h-4 rounded leading-none flex items-center', item.badgeColor)}>
+                          {item.badge}
+                        </span>
+                      )}
                     </div>
                   </button>
                 )
@@ -156,7 +195,7 @@ function DesktopSidebar({
       <Separator />
 
       {/* Nav */}
-      <nav className="flex-1 p-3 space-y-1">
+      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon
           const isActive = activePage === item.id
@@ -172,9 +211,11 @@ function DesktopSidebar({
               )}
             >
               <Icon className="size-4 shrink-0" />
-              <span>{item.label}</span>
-              {item.id === 'resume' && (
-                <Badge className="ml-auto bg-emerald-600 text-white text-[10px] px-1.5 h-4">AI</Badge>
+              <span className="flex-1">{item.label}</span>
+              {item.badge && (
+                <Badge className={cn('text-white text-[10px] px-1.5 h-4', item.badgeColor)}>
+                  {item.badge}
+                </Badge>
               )}
             </button>
           )
@@ -200,11 +241,23 @@ function DesktopSidebar({
 // ── Main Layout ────────────────────────────────────────────
 
 export default function Home() {
-  const [activePage, setActivePage] = useState<PageId>('resume')
+  const [activePage, setActivePage] = useState<PageId>('dashboard')
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+
+  const handleNavigate = (page: string) => {
+    setActivePage(page as PageId)
+  }
 
   const renderPage = () => {
     switch (activePage) {
+      case 'dashboard':
+        return <DashboardPage onNavigate={handleNavigate} />
+      case 'jobs':
+        return <JobsPage />
+      case 'applications':
+        return <ApplicationsPage />
+      case 'companies':
+        return <CompaniesPage />
       case 'resume':
         return <ResumePage />
       case 'analytics':
@@ -212,7 +265,7 @@ export default function Home() {
       case 'settings':
         return <SettingsPage />
       default:
-        return <ResumePage />
+        return <DashboardPage onNavigate={handleNavigate} />
     }
   }
 
@@ -249,6 +302,7 @@ export default function Home() {
             </div>
             <span className="font-semibold text-sm">CareerForge</span>
           </div>
+          <span className="ml-auto text-xs text-muted-foreground">{currentPage?.label}</span>
         </header>
 
         {/* Page Content */}

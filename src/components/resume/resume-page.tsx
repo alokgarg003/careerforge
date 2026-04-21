@@ -50,7 +50,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { useToast } from '@/hooks/use-toast'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 // ── Mock Data ──────────────────────────────────────────────
@@ -331,8 +331,9 @@ function ResumeUploadSection() {
   const [isDragging, setIsDragging] = useState(false)
   const [isParsing, setIsParsing] = useState(false)
   const [parsed, setParsed] = useState(false)
+  const [parsedData, setParsedData] = useState<typeof PARSED_RESUME | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { toast } = useToast()
+  const fileObjectRef = useRef<File | null>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -347,28 +348,95 @@ function ResumeUploadSection() {
     e.preventDefault()
     setIsDragging(false)
     const file = e.dataTransfer.files[0]
-    if (file) setUploadedFile(file.name)
+    if (file) {
+      setUploadedFile(file.name)
+      fileObjectRef.current = file
+    }
   }, [])
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) setUploadedFile(file.name)
+    if (file) {
+      setUploadedFile(file.name)
+      fileObjectRef.current = file
+    }
   }, [])
 
-  const handleParse = useCallback(() => {
-    if (!uploadedFile) return
+  const handleParse = useCallback(async () => {
+    if (!uploadedFile || !fileObjectRef.current) return
     setIsParsing(true)
-    setTimeout(() => {
-      setIsParsing(false)
+    try {
+      const file = fileObjectRef.current
+      const fileName = file.name.toLowerCase()
+      let extractedText = ''
+
+      if (fileName.endsWith('.txt')) {
+        extractedText = await file.text()
+      } else if (fileName.endsWith('.pdf') || fileName.endsWith('.docx')) {
+        extractedText = await file.text()
+      }
+
+      if (extractedText.trim().length < 50) {
+        if (!fileName.endsWith('.txt')) {
+          toast.error('Could not extract text from this file. Please upload a plain text (.txt) resume for best results.')
+        } else {
+          toast.error('Resume text is too short. Please upload a resume with more content.')
+        }
+        setIsParsing(false)
+        return
+      }
+
+      const res = await fetch('/api/resume/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: extractedText, fileName: uploadedFile }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to parse resume')
+        setIsParsing(false)
+        return
+      }
+
+      const allSkills = [
+        ...(data.technicalSkills?.primary || []),
+        ...(data.technicalSkills?.secondary || []),
+        ...(data.technicalSkills?.tools || []),
+      ]
+
+      setParsedData({
+        skills: allSkills,
+        experienceLevel: data.totalExperience || 'Not detected',
+        roles: data.currentRole ? [data.currentRole] : [],
+        education: (data.education || []).map((edu: string) => ({
+          degree: edu,
+          institution: data.currentCompany || '',
+          year: '',
+        })),
+        certifications: data.certifications || [],
+        achievements: data.achievements || [],
+      })
       setParsed(true)
-      toast({ title: 'Resume parsed successfully!', description: 'AI extracted 18 skills, 4 roles, and more.' })
-    }, 2000)
-  }, [uploadedFile, toast])
+      toast.success('Resume parsed successfully!', {
+        description: `AI extracted ${allSkills.length} skills and more.`,
+      })
+    } catch {
+      toast.error('Failed to parse resume. Please try again.')
+    } finally {
+      setIsParsing(false)
+    }
+  }, [uploadedFile])
 
   const handleRemoveFile = useCallback(() => {
     setUploadedFile(null)
     setParsed(false)
+    setParsedData(null)
+    fileObjectRef.current = null
   }, [])
+
+  const resumeData = parsedData || PARSED_RESUME
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}>
@@ -455,7 +523,7 @@ function ResumeUploadSection() {
                     <Target className="size-4 text-emerald-600" /> Extracted Skills
                   </h4>
                   <div className="flex flex-wrap gap-1.5">
-                    {PARSED_RESUME.skills.map((skill) => (
+                    {resumeData.skills.map((skill) => (
                       <Badge key={skill} className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 text-xs">
                         {skill}
                       </Badge>
@@ -469,7 +537,7 @@ function ResumeUploadSection() {
                     <Briefcase className="size-4 text-emerald-600" /> Detected Experience Level
                   </h4>
                   <Badge variant="outline" className="text-sm">
-                    {PARSED_RESUME.experienceLevel}
+                    {resumeData.experienceLevel}
                   </Badge>
                 </div>
 
@@ -479,7 +547,7 @@ function ResumeUploadSection() {
                     <User className="size-4 text-emerald-600" /> Detected Roles
                   </h4>
                   <div className="flex flex-wrap gap-1.5">
-                    {PARSED_RESUME.roles.map((role) => (
+                    {resumeData.roles.map((role) => (
                       <Badge key={role} variant="secondary" className="text-xs">
                         {role}
                       </Badge>
@@ -492,7 +560,7 @@ function ResumeUploadSection() {
                   <h4 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
                     <GraduationCap className="size-4 text-emerald-600" /> Education
                   </h4>
-                  {PARSED_RESUME.education.map((edu, i) => (
+                  {resumeData.education.map((edu, i) => (
                     <div key={i} className="p-3 bg-muted/50 rounded-lg">
                       <p className="text-sm font-medium">{edu.degree}</p>
                       <p className="text-xs text-muted-foreground">{edu.institution}</p>
@@ -507,7 +575,7 @@ function ResumeUploadSection() {
                     <Award className="size-4 text-emerald-600" /> Certifications
                   </h4>
                   <ul className="space-y-1">
-                    {PARSED_RESUME.certifications.map((cert, i) => (
+                    {resumeData.certifications.map((cert, i) => (
                       <li key={i} className="text-sm flex items-center gap-2">
                         <ChevronRight className="size-3 text-emerald-600" /> {cert}
                       </li>
@@ -521,7 +589,7 @@ function ResumeUploadSection() {
                     <Star className="size-4 text-emerald-600" /> Achievements
                   </h4>
                   <ul className="space-y-1">
-                    {PARSED_RESUME.achievements.map((ach, i) => (
+                    {resumeData.achievements.map((ach, i) => (
                       <li key={i} className="text-sm flex items-start gap-2">
                         <ChevronRight className="size-3 text-emerald-600 mt-1 shrink-0" /> {ach}
                       </li>
@@ -543,7 +611,6 @@ function ResumeTailoringSection() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [result, setResult] = useState<typeof TAILORED_RESUME | null>(null)
   const [changes, setChanges] = useState<typeof HIGHLIGHTED_CHANGES | null>(null)
-  const { toast } = useToast()
 
   const atsScore = 87
 
@@ -558,19 +625,35 @@ function ResumeTailoringSection() {
     }
   }
 
-  const handleGenerate = () => {
-    if (!jdText) return
+  const handleGenerate = async () => {
+    if (!selectedJob || !jdText) return
     setIsGenerating(true)
-    setTimeout(() => {
-      setIsGenerating(false)
-      setResult(TAILORED_RESUME)
+    try {
+      const res = await fetch('/api/resume/tailor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: selectedJob, type: 'tailor' }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to generate tailored resume')
+        setIsGenerating(false)
+        return
+      }
+      setResult(data.tailoredResume || TAILORED_RESUME)
       setChanges(HIGHLIGHTED_CHANGES)
-      toast({ title: 'Tailored resume generated!', description: 'ATS Score: 87/100' })
-    }, 3000)
+      toast.success('Tailored resume generated!', {
+        description: `Generated for "${data.jobTitle}" at ${data.companyName}`,
+      })
+    } catch {
+      toast.error('Failed to generate tailored resume. Please try again.')
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
   const handleDownload = () => {
-    toast({ title: 'Resume downloaded', description: 'PDF generated successfully.' })
+    toast.success('Resume downloaded', { description: 'PDF generated successfully.' })
   }
 
   return (
@@ -694,28 +777,41 @@ function CoverLetterSection() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [coverLetter, setCoverLetter] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const { toast } = useToast()
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!selectedJob) return
     setIsGenerating(true)
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/resume/tailor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: selectedJob, type: 'coverLetter' }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to generate cover letter')
+        setIsGenerating(false)
+        return
+      }
+      setCoverLetter(data.coverLetter || COVER_LETTER)
+      toast.success('Cover letter generated successfully!')
+    } catch {
+      toast.error('Failed to generate cover letter. Please try again.')
+    } finally {
       setIsGenerating(false)
-      setCoverLetter(COVER_LETTER)
-      toast({ title: 'Cover letter generated successfully!' })
-    }, 2500)
+    }
   }
 
   const handleCopy = () => {
     if (!coverLetter) return
     navigator.clipboard.writeText(coverLetter)
     setCopied(true)
-    toast({ title: 'Copied to clipboard!' })
+    toast.success('Copied to clipboard!')
     setTimeout(() => setCopied(false), 2000)
   }
 
   const handleDownload = () => {
-    toast({ title: 'Cover letter downloaded!' })
+    toast.success('Cover letter downloaded!')
   }
 
   return (
@@ -792,16 +888,36 @@ function InterviewPrepSection() {
   const [selectedJob, setSelectedJob] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [questions, setQuestions] = useState<typeof INTERVIEW_QUESTIONS | null>(null)
-  const { toast } = useToast()
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!selectedJob) return
     setIsGenerating(true)
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/resume/tailor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: selectedJob, type: 'interview' }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to generate interview questions')
+        setIsGenerating(false)
+        return
+      }
+      const qaList = Array.isArray(data.interviewQa) ? data.interviewQa : []
+      const mapped = qaList.map((q: { question?: string; answer?: string; category?: string }, i: number) => ({
+        id: String(i + 1),
+        question: q.question || '',
+        answer: q.answer || '',
+        difficulty: q.category === 'technical' ? 'Hard' : q.category === 'behavioral' ? 'Medium' : 'Easy',
+      }))
+      setQuestions(mapped.length > 0 ? mapped : INTERVIEW_QUESTIONS)
+      toast.success(`${mapped.length} interview questions generated!`)
+    } catch {
+      toast.error('Failed to generate interview questions. Please try again.')
+    } finally {
       setIsGenerating(false)
-      setQuestions(INTERVIEW_QUESTIONS)
-      toast({ title: '10 interview questions generated!' })
-    }, 2500)
+    }
   }
 
   const difficultyColor = (d: string) => {

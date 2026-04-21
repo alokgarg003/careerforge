@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import {
   Plus,
@@ -74,6 +74,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 // ─── Types ──────────────────────────────────────────────────────
 type ApplicationStatus = 'interested' | 'applied' | 'interviewing' | 'offered' | 'rejected';
@@ -905,8 +906,47 @@ function ListView({
 
 // ─── Main Component ─────────────────────────────────────────────
 export default function ApplicationsPage() {
-  const [applications, setApplications] = useState<Application[]>(initialApplications);
+  const [dbApplications, setDbApplications] = useState<Application[] | null>(null);
+  const applications = dbApplications || initialApplications;
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
+
+  // Load applications from DB on mount
+  const loadApplications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/applications');
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data = await res.json();
+      // API returns array directly; also handle { applications: [...] } shape
+      const apps = Array.isArray(data) ? data : data.applications;
+      const mapped: Application[] = apps.map((app: Record<string, unknown>) => ({
+        id: (app.id as string) || '',
+        jobTitle: (app.job as Record<string, unknown>)?.title || 'Unknown',
+        company: (app.job as Record<string, unknown>)?.companyName || 'Unknown',
+        status: app.status as Application['status'],
+        priority: app.priority as Application['priority'],
+        appliedDate: app.appliedAt ? String(app.appliedAt).split('T')[0] : '',
+        interviewDate: app.interviewAt ? String(app.interviewAt).split('T')[0] : undefined,
+        offerAmount: (app.offerAmount as string) || undefined,
+        platform: (app.platform as Platform) || 'LinkedIn',
+        hrContact: {
+          name: (app.hrContact as string) || '',
+          email: (app.hrEmail as string) || '',
+          phone: (app.hrPhone as string) || '',
+        },
+        notes: (app.notes as string) || '',
+        followedUp: (app.followedUp as boolean) || false,
+        createdAt: app.createdAt as string,
+      }));
+      setDbApplications(mapped);
+    } catch {
+      console.warn('Failed to load applications from DB, using mock data');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadApplications();
+  }, [loadApplications]);
+
   const [dialogApp, setDialogApp] = useState<Application | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [notesApp, setNotesApp] = useState<Application | null>(null);
@@ -947,23 +987,104 @@ export default function ApplicationsPage() {
     setDialogOpen(true);
   };
 
-  const handleSave = (updated: Application) => {
-    setApplications(prev => {
-      const exists = prev.find(a => a.id === updated.id);
-      if (exists) return prev.map(a => (a.id === updated.id ? updated : a));
-      return [...prev, updated];
-    });
+  const handleSave = async (updated: Application) => {
+    try {
+      const isNewLocal = updated.id.startsWith('app-');
+
+      if (isNewLocal) {
+        // Create a Job first, then the Application
+        const jobRes = await fetch('/api/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: updated.jobTitle, companyName: updated.company }),
+        });
+        if (!jobRes.ok) throw new Error('Failed to create job');
+        const job = await jobRes.json();
+
+        const appRes = await fetch('/api/applications', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobId: job.id,
+            status: updated.status,
+            priority: updated.priority,
+            platform: updated.platform,
+            notes: updated.notes,
+            hrContact: updated.hrContact.name,
+            hrEmail: updated.hrContact.email,
+            hrPhone: updated.hrContact.phone,
+          }),
+        });
+        if (!appRes.ok) throw new Error('Failed to create application');
+      } else {
+        // Update existing application
+        const appRes = await fetch(`/api/applications/${updated.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: updated.status,
+            priority: updated.priority,
+            platform: updated.platform,
+            notes: updated.notes,
+            hrContact: updated.hrContact.name,
+            hrEmail: updated.hrContact.email,
+            hrPhone: updated.hrContact.phone,
+            appliedAt: updated.appliedDate ? new Date(updated.appliedDate).toISOString() : null,
+            interviewAt: updated.interviewDate ? new Date(updated.interviewDate).toISOString() : null,
+            offerAmount: updated.offerAmount || null,
+            followedUp: updated.followedUp,
+          }),
+        });
+        if (!appRes.ok) throw new Error('Failed to update application');
+      }
+
+      await loadApplications();
+      toast.success('Application saved successfully');
+    } catch (err) {
+      console.error('Save failed:', err);
+      toast.error('Failed to save application');
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setApplications(prev => prev.filter(a => a.id !== id));
+  const handleDelete = async (id: string) => {
+    if (id.startsWith('app-')) {
+      // Mock data — cannot delete from DB
+      toast.info('Mock data cannot be deleted');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/applications/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete');
+      await loadApplications();
+      toast.success('Application deleted');
+    } catch (err) {
+      console.error('Delete failed:', err);
+      toast.error('Failed to delete application');
+    }
   };
 
-  const handleMoveNext = (app: Application) => {
+  const handleMoveNext = async (app: Application) => {
     const next = getNextStatus(app.status);
-    if (next) {
-      const updated = { ...app, status: next };
-      setApplications(prev => prev.map(a => (a.id === app.id ? updated : a)));
+    if (!next) return;
+
+    // Mock data — skip API call
+    if (app.id.startsWith('app-')) {
+      toast.info('Cannot move mock data');
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/applications/${app.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+      await loadApplications();
+      toast.success(`Moved to ${STATUS_CONFIG[next].label}`);
+    } catch (err) {
+      console.error('Move failed:', err);
+      toast.error('Failed to move application');
     }
   };
 

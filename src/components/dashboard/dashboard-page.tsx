@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Briefcase,
@@ -18,7 +19,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import {
   mockJobs,
   mockApplications,
@@ -105,14 +105,50 @@ interface DashboardPageProps {
 }
 
 export function DashboardPage({ onNavigate }: DashboardPageProps) {
-  const stats = getStats(mockJobs, mockApplications);
-  const pipeline = getPipelineCounts(mockApplications);
-  const topJobs = [...mockJobs]
-    .filter((j) => j.matchScore !== undefined)
-    .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0))
-    .slice(0, 5);
-  const recentActivities = mockActivities.slice(0, 5);
-  const maxPipeline = Math.max(...pipeline.map((p) => p.count), 1);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+
+  useEffect(() => {
+    fetch('/api/dashboard')
+      .then(r => r.json())
+      .then(data => setDashboardData(data))
+      .catch(() => {});
+  }, []);
+
+  // Use real data if available, fallback to mock
+  const apiStats = dashboardData ? {
+    totalJobs: dashboardData.totalJobs || 0,
+    strongMatches: dashboardData.strongMatches || 0,
+    activeApplications: dashboardData.activeApplications || 0,
+    companiesTargeted: dashboardData.companiesTargeted || 0,
+  } : getStats(mockJobs, mockApplications);
+  const stats = apiStats;
+  const apiPipeline = dashboardData?.pipelineCounts
+    ? Object.entries(dashboardData.pipelineCounts).map(([stage, count]) => ({
+        stage: stage.charAt(0).toUpperCase() + stage.slice(1),
+        count: count as number,
+      }))
+    : null;
+  const pipeline = apiPipeline || getPipelineCounts(mockApplications);
+  const topJobsSource = dashboardData?.topJobs || mockJobs;
+  const topJobs = [...topJobsSource]
+    .filter((j: any) => j.matchScore !== undefined || j.match?.score !== undefined)
+    .sort((a: any, b: any) => (b.matchScore ?? b.match?.score ?? 0) - (a.matchScore ?? a.match?.score ?? 0))
+    .slice(0, 5)
+    .map((j: any) => ({
+      id: j.id,
+      title: j.title,
+      companyName: j.companyName,
+      location: j.location,
+      matchScore: j.matchScore ?? j.match?.score,
+      skills: typeof j.skills === 'string' ? JSON.parse(j.skills || '[]') : (j.skills || []),
+    }));
+  const recentActivities = dashboardData?.recentActivity?.map((a: any) => ({
+    id: a.id,
+    type: a.type,
+    description: a.detail || a.description,
+    timestamp: a.createdAt,
+  })) || mockActivities.slice(0, 5);
+  const maxPipeline = Math.max(...pipeline.map((p: any) => p.count), 1);
 
   return (
     <motion.div

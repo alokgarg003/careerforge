@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search,
@@ -12,7 +12,11 @@ import {
   ChevronUp,
   ChevronDown,
   Filter,
+  Loader2,
+  Sparkles,
+  Globe,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,6 +50,28 @@ import {
   getWorkModeBadgeColor,
 } from '@/lib/types';
 
+// Transform DB job to UI Job type
+function transformJob(j: any): Job {
+  let skills: string[] = [];
+  try { skills = typeof j.skills === 'string' ? JSON.parse(j.skills) : (j.skills || []); } catch { skills = []; }
+  return {
+    id: j.id,
+    title: j.title,
+    companyName: j.companyName,
+    location: j.location,
+    source: j.source,
+    url: j.url,
+    description: j.description,
+    matchScore: j.match?.score ?? j.matchScore ?? undefined,
+    alignment: j.match?.alignment ?? undefined,
+    skills,
+    experienceRange: j.experienceRange,
+    workMode: j.workMode,
+    datePosted: j.datePosted || j.dateScraped,
+    saved: false,
+  };
+}
+
 const fadeIn = {
   initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
@@ -77,9 +103,88 @@ export function JobsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [savedJobs, setSavedJobs] = useState<Set<string>>(new Set());
   const [selectedTableRows, setSelectedTableRows] = useState<Set<string>>(new Set());
+  const [aiSearchLoading, setAiSearchLoading] = useState(false);
+  const [matchLoading, setMatchLoading] = useState<string | null>(null);
+  const [dbJobs, setDbJobs] = useState<Job[]>([]);
+  const [jobsLoaded, setJobsLoaded] = useState(false);
+
+  // Load jobs from database on mount
+  const loadJobs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/jobs');
+      const data = await res.json();
+      if (data.jobs && data.jobs.length > 0) {
+        setDbJobs(data.jobs.map(transformJob));
+        setJobsLoaded(true);
+      } else {
+        setDbJobs(mockJobs);
+        setJobsLoaded(true);
+      }
+    } catch {
+      setDbJobs(mockJobs);
+      setJobsLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => { loadJobs(); }, [loadJobs]);
+
+  // AI-powered job search
+  const handleAISearch = async () => {
+    if (!searchQuery.trim()) {
+      toast.error('Please enter a job title or keyword to search');
+      return;
+    }
+    setAiSearchLoading(true);
+    try {
+      const res = await fetch('/api/jobs/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: searchQuery,
+          location: selectedLocation !== 'All Locations' ? selectedLocation : '',
+          numResults: 10,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.results?.length > 0) {
+        const newJobs = data.results.map(transformJob);
+        setDbJobs(prev => [...newJobs, ...prev]);
+        toast.success(`Found ${data.results.length} jobs from web search!`);
+      } else {
+        toast.info(data.message || 'No jobs found. Try different keywords.');
+      }
+    } catch (err) {
+      toast.error('AI search failed. Please try again.');
+    } finally {
+      setAiSearchLoading(false);
+    }
+  };
+
+  // AI match analysis for a specific job
+  const handleAnalyzeMatch = async (jobId: string) => {
+    setMatchLoading(jobId);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/match`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        // Refresh jobs to get updated match data
+        await loadJobs();
+        if (selectedJob?.id === jobId) {
+          setSelectedJob(prev => prev ? { ...prev, matchScore: data.score, alignment: data.alignment } : null);
+        }
+        toast.success(`Match analysis complete! Score: ${data.score} (${data.alignment})`);
+      } else {
+        toast.error(data.error || 'Match analysis failed');
+      }
+    } catch {
+      toast.error('Match analysis failed. Please try again.');
+    } finally {
+      setMatchLoading(null);
+    }
+  };
 
   const filteredJobs = useMemo(() => {
-    let jobs = [...mockJobs];
+    let jobs = [...dbJobs];
 
     // Text search
     if (searchQuery.trim()) {
@@ -237,14 +342,21 @@ export function JobsPage() {
 
             {/* Action buttons */}
             <div className="flex gap-2">
-              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white whitespace-nowrap">
-                <Search className="size-4" />
-                Search Jobs
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700 text-white whitespace-nowrap"
+                onClick={handleAISearch}
+                disabled={aiSearchLoading}
+              >
+                {aiSearchLoading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                {aiSearchLoading ? 'Searching...' : 'AI Search'}
               </Button>
               <Button variant="outline" className="whitespace-nowrap">
                 <Plus className="size-4" />
-                Add Job Manually
+                Add Job
               </Button>
+              {!jobsLoaded && (
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              )}
             </div>
           </div>
         </Card>
@@ -345,9 +457,17 @@ export function JobsPage() {
           </div>
 
           {/* Results count */}
-          <span className="text-xs text-muted-foreground sm:ml-auto">
-            {filteredJobs.length} job{filteredJobs.length !== 1 ? 's' : ''} found
-          </span>
+          <div className="flex items-center gap-2 sm:ml-auto">
+            {dbJobs.length > 0 && dbJobs[0] !== mockJobs[0] && (
+              <span className="text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                <Globe className="size-3" />
+                Live Data
+              </span>
+            )}
+            <span className="text-xs text-muted-foreground">
+              {filteredJobs.length} job{filteredJobs.length !== 1 ? 's' : ''} found
+            </span>
+          </div>
         </div>
       </motion.div>
 
