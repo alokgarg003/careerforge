@@ -21,10 +21,11 @@
 
 <p align="center">
   <a href="#features">Features</a> •
+  <a href="#tech-stack">Tech Stack</a> •
   <a href="#getting-started">Getting Started</a> •
   <a href="#architecture">Architecture</a> •
-  <a href="#tech-stack">Tech Stack</a> •
-  <a href="#screenshots">Screenshots</a>
+  <a href="#project-structure">Project Structure</a> •
+  <a href="#contributing">Contributing</a>
 </p>
 
 ---
@@ -42,6 +43,7 @@ CareerForge is a full-stack Next.js application that combines **AI-powered job d
 - Quick action shortcuts for common tasks
 
 ### 🔍 Smart Job Search (5 Strategies)
+
 | Strategy | Description | Speed |
 |----------|-------------|-------|
 | **AI Web Search** | Leverages AI-powered web search to find jobs matching your profile | Moderate |
@@ -220,16 +222,19 @@ prisma/
 
 ## Screenshots
 
-> The application features a modern dark/light theme dashboard with responsive design.
+> *Screenshots will be added soon. The application features a modern dark/light theme dashboard with responsive design optimized for desktop and mobile.*
 
-**Key Pages:**
-- **Dashboard** — Pipeline overview with stats and activity feed
-- **Jobs** — Multi-strategy search with AI-powered match scoring
-- **Applications** — Kanban board with drag-and-drop pipeline
-- **Companies** — 100+ target companies with career page configs
-- **Analytics** — Interactive charts and data visualization
-- **Resume** — AI-tailored resume and cover letter generation
-- **Settings** — Profile management and data export
+### Key Pages
+
+| Page | Description |
+|------|-------------|
+| **🏠 Dashboard** | Pipeline overview with real-time stats, activity feed, and quick actions |
+| **🔍 Jobs** | Multi-strategy search interface with AI-powered match scoring (0-100) |
+| **📋 Applications** | Kanban board for tracking application pipeline with drag-and-drop |
+| **🏢 Companies** | Database of 100+ target companies with career page scanning |
+| **📊 Analytics** | Interactive charts for job sources, match distribution, and insights |
+| **📄 Resume** | AI-powered resume tailoring and cover letter generation |
+| **⚙️ Settings** | Profile management, data export, and application preferences |
 
 ---
 
@@ -278,5 +283,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 #   c a r e e r f o r g e 
  
 #   c a r e e r f o r g e 
- 
-
