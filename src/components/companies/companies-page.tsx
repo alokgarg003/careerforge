@@ -28,6 +28,8 @@ import {
   Target,
   BookmarkPlus,
   X,
+  Radar,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -85,6 +87,10 @@ interface Company {
   linkedinPage: string;
   notes: string;
   applicationIds: string[];
+  searchKeywords: string;
+  searchLocation: string;
+  lastScannedAt: string | null;
+  scanResultsCount: number;
 }
 
 // ─── Constants ──────────────────────────────────────────────────
@@ -230,9 +236,28 @@ function CompanyCard({
           </div>
 
           {/* Notes preview */}
+          {/* Search Keywords */}
+          {company.searchKeywords && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {company.searchKeywords.split(',').slice(0, 3).map(kw => (
+                <Badge key={kw} variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200 font-normal">
+                  <Search className="h-2.5 w-2.5 mr-0.5" />
+                  {kw.trim()}
+                </Badge>
+              ))}
+            </div>
+          )}
+
           {company.notes && (
             <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
               {company.notes}
+            </p>
+          )}
+
+          {/* Last scanned */}
+          {company.lastScannedAt && (
+            <p className="text-[10px] text-muted-foreground mt-1.5">
+              Last scanned: {new Date(company.lastScannedAt).toLocaleDateString()} ({company.scanResultsCount} results)
             </p>
           )}
         </div>
@@ -276,12 +301,16 @@ function CompanyDetailDialog({
   onOpenChange,
   onSave,
   onDelete,
+  onScanCareerPage,
+  scanningId,
 }: {
   company: Company | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (c: Company) => void;
   onDelete: (id: string) => void;
+  onScanCareerPage?: (id: string) => void;
+  scanningId?: string | null;
 }) {
   const [form, setForm] = useState<Company | null>(null);
 
@@ -426,6 +455,35 @@ function CompanyDetailDialog({
 
           {/* Notes */}
           <div className="space-y-1.5">
+            <Label>Search Keywords</Label>
+            <p className="text-[10px] text-muted-foreground">Comma-separated keywords for targeted job search at this company</p>
+            <Input
+              value={form.searchKeywords}
+              onChange={e => updateField('searchKeywords', e.target.value)}
+              placeholder="MFT, file transfer, support engineer"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Search Location</Label>
+            <Input
+              value={form.searchLocation}
+              onChange={e => updateField('searchLocation', e.target.value)}
+              placeholder="Noida, Remote, Bangalore"
+            />
+          </div>
+
+          {form.lastScannedAt && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 text-xs text-muted-foreground">
+              <Radar className="size-3.5" />
+              Last scanned: {new Date(form.lastScannedAt).toLocaleString()} ({form.scanResultsCount} results)
+            </div>
+          )}
+
+          <Separator />
+
+          {/* Notes */}
+          <div className="space-y-1.5">
             <Label>Notes</Label>
             <Textarea
               value={form.notes}
@@ -485,6 +543,18 @@ function CompanyDetailDialog({
             <Trash2 className="h-4 w-4" />
             Delete
           </Button>
+          {form?.careerPage && onScanCareerPage && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-emerald-300 text-emerald-600 hover:bg-emerald-50"
+              onClick={() => onScanCareerPage(form.id)}
+              disabled={scanningId === form.id}
+            >
+              {scanningId === form.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Radar className="h-4 w-4" />}
+              {scanningId === form.id ? 'Scanning...' : 'Scan Careers'}
+            </Button>
+          )}
           <div className="flex-1" />
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
@@ -569,6 +639,10 @@ export default function CompaniesPage() {
         linkedinPage: c.linkedinUrl || '',
         notes: c.notes || '',
         applicationIds: [],
+        searchKeywords: c.searchKeywords || '',
+        searchLocation: c.searchLocation || '',
+        lastScannedAt: c.lastScannedAt || null,
+        scanResultsCount: c.scanResultsCount || 0,
       }));
       setDbCompanies(mapped);
     } catch (err) {
@@ -582,6 +656,8 @@ export default function CompaniesPage() {
   }, [loadCompanies]);
 
   // Handlers
+  const [scanningId, setScanningId] = useState<string | null>(null);
+
   const handleSave = async (updated: Company) => {
     try {
       const payload = {
@@ -598,6 +674,8 @@ export default function CompaniesPage() {
         notes: updated.notes,
         priority: updated.priority,
         status: updated.status.toLowerCase(),
+        searchKeywords: updated.searchKeywords,
+        searchLocation: updated.searchLocation,
       };
       const res = await fetch(`/api/companies/${updated.id}`, {
         method: 'PUT',
@@ -631,6 +709,28 @@ export default function CompaniesPage() {
   const handleEdit = (c: Company) => {
     setDetailCompany(c);
     setDetailOpen(true);
+  };
+
+  const handleScanCareerPage = async (companyId: string) => {
+    setScanningId(companyId);
+    try {
+      const res = await fetch('/api/jobs/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy: 'career_page', companyId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Found ${data.totalSaved} jobs from career page!`);
+        loadCompanies();
+      } else {
+        toast.info(data.message || 'No jobs found on career page.');
+      }
+    } catch {
+      toast.error('Career page scan failed. Try again.');
+    } finally {
+      setScanningId(null);
+    }
   };
 
   const toggleSort = (field: typeof sortBy) => {
@@ -900,6 +1000,8 @@ export default function CompaniesPage() {
         onOpenChange={setDetailOpen}
         onSave={handleSave}
         onDelete={handleDelete}
+        onScanCareerPage={handleScanCareerPage}
+        scanningId={scanningId}
       />
     </div>
   );

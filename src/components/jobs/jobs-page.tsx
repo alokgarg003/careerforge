@@ -14,6 +14,11 @@ import {
   Loader2,
   Sparkles,
   Globe,
+  Zap,
+  Building2,
+  Radio,
+  Radar,
+  Brain,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
@@ -36,6 +41,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { JobCard } from '@/components/jobs/job-card';
 import { JobDetailDrawer } from '@/components/jobs/job-detail-drawer';
 import {
@@ -79,13 +85,22 @@ const stagger = {
 };
 
 const locations = ['All Locations', 'Noida', 'Delhi NCR', 'Remote', 'Bangalore', 'Jaipur'];
-const sources = ['All', 'Web Search', 'LinkedIn', 'Naukri', 'Manual'];
+const sources = ['All', 'AI Search', 'Free API', 'Career Page', 'Web Search', 'Manual'];
 const alignments = ['All', 'Strong Match', 'Good Match', 'Stretch', 'Ignore'];
 const workModes = ['All', 'Remote', 'Hybrid', 'Onsite'];
 const sortOptions: { value: SortOption; label: string }[] = [
   { value: 'score', label: 'Score' },
   { value: 'date', label: 'Date' },
   { value: 'company', label: 'Company' },
+];
+
+// Search strategies
+const strategies = [
+  { value: 'ai_web', label: 'AI Web Search', icon: Brain, desc: 'Search LinkedIn, Naukri, Indeed via AI', color: 'text-violet-500' },
+  { value: 'free_api', label: 'Free Job APIs', icon: Radio, desc: 'Remotive, Jobicy, Arbeitnow (instant)', color: 'text-emerald-500' },
+  { value: 'career_page', label: 'Career Page Crawl', icon: Globe, desc: 'Crawl company career pages directly', color: 'text-blue-500' },
+  { value: 'smart', label: 'Smart Search', icon: Zap, desc: 'Free APIs first, then AI web search', color: 'text-amber-500' },
+  { value: 'company_bulk', label: 'Bulk Company Scan', icon: Building2, desc: 'Scan top 10 targeted companies', color: 'text-rose-500' },
 ];
 
 export function JobsPage() {
@@ -99,10 +114,13 @@ export function JobsPage() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [savedJobs, setSavedJobs] = useState<Set<string>>(new Set());
-  const [aiSearchLoading, setAiSearchLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [matchLoading, setMatchLoading] = useState<string | null>(null);
   const [dbJobs, setDbJobs] = useState<Job[]>([]);
   const [jobsLoaded, setJobsLoaded] = useState(false);
+  const [searchProgress, setSearchProgress] = useState('');
+  const [showStrategyPicker, setShowStrategyPicker] = useState(false);
+  const [selectedStrategy, setSelectedStrategy] = useState('ai_web');
 
   // Load jobs from database on mount
   const loadJobs = useCallback(async () => {
@@ -123,35 +141,49 @@ export function JobsPage() {
 
   useEffect(() => { loadJobs(); }, [loadJobs]);
 
-  // AI-powered job search
-  const handleAISearch = async () => {
-    if (!searchQuery.trim()) {
+  // Search handler with strategy
+  const handleSearch = async () => {
+    if (!searchQuery.trim() && selectedStrategy !== 'company_bulk' && selectedStrategy !== 'free_api') {
       toast.error('Please enter a job title or keyword to search');
       return;
     }
-    setAiSearchLoading(true);
+
+    setSearchLoading(true);
+    const strategyLabel = strategies.find(s => s.value === selectedStrategy)?.label || selectedStrategy;
+    setSearchProgress(`Running ${strategyLabel}...`);
+
     try {
+      const body: any = {
+        query: searchQuery,
+        location: selectedLocation !== 'All Locations' ? selectedLocation : '',
+        numResults: 10,
+        strategy: selectedStrategy,
+      };
+
       const res = await fetch('/api/jobs/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: searchQuery,
-          location: selectedLocation !== 'All Locations' ? selectedLocation : '',
-          numResults: 10,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (data.success && data.results?.length > 0) {
+
+      if (data.success && data.totalSaved > 0) {
         const newJobs = data.results.map(transformJob);
-        setDbJobs(prev => [...newJobs, ...prev]);
-        toast.success(`Found ${data.results.length} jobs from web search!`);
+        // Deduplicate by title+company
+        const existing = new Map(dbJobs.map(j => [`${j.title.toLowerCase()}|${j.companyName.toLowerCase()}`, j]));
+        const unique = newJobs.filter(j => !existing.has(`${j.title.toLowerCase()}|${j.companyName.toLowerCase()}`));
+        setDbJobs(prev => [...unique, ...prev]);
+        toast.success(`${strategyLabel}: Found ${data.totalSaved} new jobs (deduped from ${data.totalFound})`);
+      } else if (data.success) {
+        toast.info(data.message || `${strategyLabel}: No new unique jobs found.`);
       } else {
-        toast.info(data.message || 'No jobs found. Try different keywords.');
+        toast.error(data.error || 'Search failed');
       }
     } catch {
-      toast.error('AI search failed. Please try again.');
+      toast.error(`${strategyLabel} failed. Please try again.`);
     } finally {
-      setAiSearchLoading(false);
+      setSearchLoading(false);
+      setSearchProgress('');
     }
   };
 
@@ -162,12 +194,11 @@ export function JobsPage() {
       const res = await fetch(`/api/jobs/${jobId}/match`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        // Refresh jobs to get updated match data
         await loadJobs();
         if (selectedJob?.id === jobId) {
           setSelectedJob(prev => prev ? { ...prev, matchScore: data.score, alignment: data.alignment } : null);
         }
-        toast.success(`Match analysis complete! Score: ${data.score} (${data.alignment})`);
+        toast.success(`Score: ${data.score} (${data.alignment}) ${data.bonusPoints ? `(+${data.bonusPoints} bonus)` : ''} ${data.penaltyPoints ? `(-${data.penaltyPoints} penalty)` : ''}`);
       } else {
         toast.error(data.error || 'Match analysis failed');
       }
@@ -198,9 +229,17 @@ export function JobsPage() {
       jobs = jobs.filter((j) => j.location === selectedLocation);
     }
 
-    // Source filter
+    // Source filter (normalize)
     if (sourceFilter !== 'All') {
-      jobs = jobs.filter((j) => j.source === sourceFilter);
+      jobs = jobs.filter((j) => {
+        const src = j.source?.toLowerCase() || '';
+        const filter = sourceFilter.toLowerCase();
+        if (filter === 'ai search' || filter === 'web search') return src === 'web_search';
+        if (filter === 'free api') return src.startsWith('free_api');
+        if (filter === 'career page') return src === 'career_page';
+        if (filter === 'manual') return src === 'manual';
+        return j.source === sourceFilter;
+      });
     }
 
     // Alignment filter
@@ -269,7 +308,7 @@ export function JobsPage() {
   };
 
   const handleAddJob = () => {
-    toast.info('Use AI Search to discover jobs, or add via the Applications page');
+    toast.info('Use search to discover jobs, or add via the Applications page');
   };
 
   const activeFiltersCount =
@@ -278,388 +317,459 @@ export function JobsPage() {
     (workModeFilter !== 'All' ? 1 : 0) +
     (selectedLocation !== 'All Locations' ? 1 : 0);
 
+  const currentStrategy = strategies.find(s => s.value === selectedStrategy);
+
   return (
-    <motion.div
-      className="space-y-6"
-      variants={stagger}
-      initial="initial"
-      animate="animate"
-    >
-      {/* Header */}
-      <motion.div variants={fadeIn}>
-        <h1 className="text-2xl font-bold text-foreground">Job Discovery</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Find and analyze jobs that match your career goals
-        </p>
-      </motion.div>
-
-      {/* Search Section */}
-      <motion.div variants={fadeIn}>
-        <Card className="py-5 px-5">
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Search input */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by job title, company, skills..."
-                className="pl-9 h-10"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-
-            {/* Location dropdown */}
-            <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-              <SelectTrigger className="w-full sm:w-[160px] h-10">
-                <MapPin className="size-4 mr-1 text-muted-foreground" />
-                <SelectValue placeholder="Location" />
-              </SelectTrigger>
-              <SelectContent>
-                {locations.map((loc) => (
-                  <SelectItem key={loc} value={loc}>
-                    {loc}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Action buttons */}
-            <div className="flex gap-2">
-              <Button
-                className="bg-emerald-600 hover:bg-emerald-700 text-white whitespace-nowrap"
-                onClick={handleAISearch}
-                disabled={aiSearchLoading}
-              >
-                {aiSearchLoading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                {aiSearchLoading ? 'Searching...' : 'AI Search'}
-              </Button>
-              <Button
-                variant="outline"
-                className="whitespace-nowrap"
-                onClick={handleAddJob}
-              >
-                <Plus className="size-4" />
-                Add Job
-              </Button>
-              {!jobsLoaded && (
-                <Loader2 className="size-4 animate-spin text-muted-foreground" />
-              )}
-            </div>
-          </div>
-        </Card>
-      </motion.div>
-
-      {/* Filter Bar */}
-      <motion.div variants={fadeIn}>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <SlidersHorizontal className="size-4" />
-            <span className="font-medium">
-              Filters
-              {activeFiltersCount > 0 && (
-                <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5">
-                  {activeFiltersCount}
-                </Badge>
-              )}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger size="sm" className="w-[120px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {sources.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s === 'All' ? 'All Sources' : s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={alignmentFilter} onValueChange={setAlignmentFilter}>
-              <SelectTrigger size="sm" className="w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {alignments.map((a) => (
-                  <SelectItem key={a} value={a}>
-                    {a === 'All' ? 'All Alignments' : a}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={workModeFilter} onValueChange={setWorkModeFilter}>
-              <SelectTrigger size="sm" className="w-[120px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {workModes.map((w) => (
-                  <SelectItem key={w} value={w}>
-                    {w === 'All' ? 'All Modes' : w}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={sortBy}
-              onValueChange={(v) => setSortBy(v as SortOption)}
-            >
-              <SelectTrigger size="sm" className="w-[120px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {sortOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    Sort: {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Separator orientation="vertical" className="h-6 mx-1 hidden sm:block" />
-
-            {/* View toggle */}
-            <div className="flex rounded-md border bg-muted/50 p-0.5">
-              <Button
-                variant={viewMode === 'cards' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-7 px-2.5"
-                onClick={() => setViewMode('cards')}
-              >
-                <LayoutGrid className="size-3.5" />
-              </Button>
-              <Button
-                variant={viewMode === 'table' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-7 px-2.5"
-                onClick={() => setViewMode('table')}
-              >
-                <List className="size-3.5" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Results count */}
-          <div className="flex items-center gap-2 sm:ml-auto">
-            <span className="text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-              <Globe className="size-3" />
-              Database
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {filteredJobs.length} job{filteredJobs.length !== 1 ? 's' : ''} found
-            </span>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Card View */}
-      {viewMode === 'cards' && (
-        <motion.div
-          className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
-          variants={stagger}
-        >
-          {filteredJobs.map((job) => (
-            <motion.div key={job.id} variants={fadeIn}>
-              <JobCard
-                job={{ ...job, saved: savedJobs.has(job.id) }}
-                onViewDetails={handleViewDetails}
-                onSave={handleSave}
-              />
-            </motion.div>
-          ))}
-          {filteredJobs.length === 0 && (
-            <motion.div variants={fadeIn} className="col-span-full">
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <Filter className="size-10 text-muted-foreground/40 mb-3" />
-                <p className="text-sm font-medium text-muted-foreground">
-                  No jobs match your filters
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Try adjusting your search criteria or filters
-                </p>
-              </div>
-            </motion.div>
-          )}
-        </motion.div>
-      )}
-
-      {/* Table View */}
-      {viewMode === 'table' && (
+    <TooltipProvider>
+      <motion.div
+        className="space-y-6"
+        variants={stagger}
+        initial="initial"
+        animate="animate"
+      >
+        {/* Header */}
         <motion.div variants={fadeIn}>
-          <Card className="py-0 overflow-hidden">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[200px]">
-                      <button
-                        className="flex items-center gap-1 hover:text-foreground transition-colors"
-                        onClick={() =>
-                          setSortBy(sortBy === 'company' ? 'score' : 'company')
-                        }
-                      >
-                        Job
-                        {sortBy === 'company' && (
-                          <ChevronUp className="size-3" />
-                        )}
-                      </button>
-                    </TableHead>
-                    <TableHead className="min-w-[80px]">
-                      <button
-                        className="flex items-center gap-1 hover:text-foreground transition-colors"
-                        onClick={() =>
-                          setSortBy(sortBy === 'score' ? 'company' : 'score')
-                        }
-                      >
-                        Score
-                        {sortBy === 'score' && <ChevronUp className="size-3" />}
-                      </button>
-                    </TableHead>
-                    <TableHead>Alignment</TableHead>
-                    <TableHead className="min-w-[100px]">Source</TableHead>
-                    <TableHead className="min-w-[80px]">Mode</TableHead>
-                    <TableHead className="min-w-[100px]">
-                      <button
-                        className="flex items-center gap-1 hover:text-foreground transition-colors"
-                        onClick={() =>
-                          setSortBy(sortBy === 'date' ? 'score' : 'date')
-                        }
-                      >
-                        Date
-                        {sortBy === 'date' && <ChevronUp className="size-3" />}
-                      </button>
-                    </TableHead>
-                    <TableHead className="w-20" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredJobs.map((job) => {
-                    const score = job.matchScore ?? 0;
-                    const alignment =
-                      score >= 70
-                        ? 'Strong Match'
-                        : score >= 45
-                          ? 'Good Match'
-                          : score >= 20
-                            ? 'Stretch'
-                            : 'Ignore';
-                    const scoreColorClass = getScoreColor(score);
-                    const sourceColor = getSourceBadgeColor(job.source);
-                    const workModeColor = getWorkModeBadgeColor(job.workMode ?? '');
+          <h1 className="text-2xl font-bold text-foreground">Job Discovery</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Multi-strategy job search with AI-powered scoring
+          </p>
+        </motion.div>
 
-                    return (
-                      <TableRow
-                        key={job.id}
-                        className="cursor-pointer"
-                        onClick={() => handleViewDetails(job)}
-                      >
-                        <TableCell>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">
-                              {job.title}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {job.companyName} · {job.location}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold border ${scoreColorClass}`}
-                          >
-                            {score}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              score >= 70
-                                ? 'default'
-                                : score >= 45
-                                  ? 'secondary'
-                                  : 'outline'
+        {/* Search Section */}
+        <motion.div variants={fadeIn}>
+          <Card className="py-5 px-5">
+            {/* Strategy Selector */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs font-medium text-muted-foreground">Strategy:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {strategies.map((s) => {
+                  const Icon = s.icon;
+                  const isActive = selectedStrategy === s.value;
+                  return (
+                    <Tooltip key={s.value}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => setSelectedStrategy(s.value)}
+                          className={`
+                            flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+                            border transition-all duration-200 cursor-pointer
+                            ${isActive
+                              ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                              : 'border-border hover:border-muted-foreground/30 text-muted-foreground hover:text-foreground'
                             }
-                            className={
-                              score >= 70
-                                ? 'bg-emerald-600 text-[10px]'
-                                : score >= 45
-                                  ? 'bg-amber-500 text-white text-[10px]'
-                                  : 'text-[10px]'
-                            }
-                          >
-                            {alignment}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium ${sourceColor}`}
-                          >
-                            {job.source}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          {job.workMode && (
-                            <span
-                              className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium ${workModeColor}`}
-                            >
-                              {job.workMode}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {job.datePosted
-                            ? new Date(job.datePosted).toLocaleDateString(
-                                'en-US',
-                                { month: 'short', day: 'numeric' }
-                              )
-                            : '—'}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs text-emerald-600"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleViewDetails(job);
-                            }}
-                          >
-                            View
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {filteredJobs.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12">
-                        <div className="flex flex-col items-center">
-                          <Filter className="size-8 text-muted-foreground/40 mb-2" />
-                          <p className="text-sm text-muted-foreground">
-                            No jobs match your filters
-                          </p>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                          `}
+                        >
+                          <Icon className="size-3.5" />
+                          {s.label}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[220px]">
+                        <p className="text-xs">{s.desc}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Strategy description */}
+            {currentStrategy && (
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-muted/50">
+                <currentStrategy.icon className={`size-4 ${currentStrategy.color}`} />
+                <p className="text-xs text-muted-foreground">{currentStrategy.desc}</p>
+                {(selectedStrategy === 'company_bulk' || selectedStrategy === 'free_api') && (
+                  <Badge variant="outline" className="text-[10px] ml-auto">No query needed</Badge>
+                )}
+              </div>
+            )}
+
+            {/* Search input row */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Input
+                  placeholder={
+                    selectedStrategy === 'company_bulk'
+                      ? 'Scan top targeted companies (no query needed)'
+                      : selectedStrategy === 'free_api'
+                        ? 'Search free job boards (no query needed)'
+                        : 'Search by job title, company, skills...'
+                  }
+                  className="pl-9 h-10"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  disabled={searchLoading}
+                />
+              </div>
+
+              <Select value={selectedLocation} onValueChange={setSelectedLocation} disabled={searchLoading}>
+                <SelectTrigger className="w-full sm:w-[160px] h-10">
+                  <MapPin className="size-4 mr-1 text-muted-foreground" />
+                  <SelectValue placeholder="Location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((loc) => (
+                    <SelectItem key={loc} value={loc}>
+                      {loc}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <div className="flex gap-2">
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white whitespace-nowrap"
+                  onClick={handleSearch}
+                  disabled={searchLoading}
+                >
+                  {searchLoading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                  {searchLoading ? (searchProgress || 'Searching...') : 'Search'}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="whitespace-nowrap"
+                  onClick={handleAddJob}
+                >
+                  <Plus className="size-4" />
+                  Add Job
+                </Button>
+              </div>
             </div>
           </Card>
         </motion.div>
-      )}
 
-      {/* Job Detail Drawer */}
-      <JobDetailDrawer
-        job={selectedJob}
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        onRefresh={loadJobs}
-      />
-    </motion.div>
+        {/* Filter Bar */}
+        <motion.div variants={fadeIn}>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <SlidersHorizontal className="size-4" />
+              <span className="font-medium">
+                Filters
+                {activeFiltersCount > 0 && (
+                  <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5">
+                    {activeFiltersCount}
+                  </Badge>
+                )}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                <SelectTrigger size="sm" className="w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {sources.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s === 'All' ? 'All Sources' : s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={alignmentFilter} onValueChange={setAlignmentFilter}>
+                <SelectTrigger size="sm" className="w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {alignments.map((a) => (
+                    <SelectItem key={a} value={a}>
+                      {a === 'All' ? 'All Alignments' : a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={workModeFilter} onValueChange={setWorkModeFilter}>
+                <SelectTrigger size="sm" className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {workModes.map((w) => (
+                    <SelectItem key={w} value={w}>
+                      {w === 'All' ? 'All Modes' : w}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={sortBy}
+                onValueChange={(v) => setSortBy(v as SortOption)}
+              >
+                <SelectTrigger size="sm" className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {sortOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      Sort: {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Separator orientation="vertical" className="h-6 mx-1 hidden sm:block" />
+
+              {/* View toggle */}
+              <div className="flex rounded-md border bg-muted/50 p-0.5">
+                <Button
+                  variant={viewMode === 'cards' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-7 px-2.5"
+                  onClick={() => setViewMode('cards')}
+                >
+                  <LayoutGrid className="size-3.5" />
+                </Button>
+                <Button
+                  variant={viewMode === 'table' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-7 px-2.5"
+                  onClick={() => setViewMode('table')}
+                >
+                  <List className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Results count */}
+            <div className="flex items-center gap-2 sm:ml-auto">
+              <span className="text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                <Globe className="size-3" />
+                Database
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {filteredJobs.length} job{filteredJobs.length !== 1 ? 's' : ''} found
+              </span>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Card View */}
+        {viewMode === 'cards' && (
+          <motion.div
+            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
+            variants={stagger}
+          >
+            {filteredJobs.map((job) => (
+              <motion.div key={job.id} variants={fadeIn}>
+                <JobCard
+                  job={{ ...job, saved: savedJobs.has(job.id) }}
+                  onViewDetails={handleViewDetails}
+                  onSave={handleSave}
+                />
+              </motion.div>
+            ))}
+            {filteredJobs.length === 0 && (
+              <motion.div variants={fadeIn} className="col-span-full">
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <Filter className="size-10 text-muted-foreground/40 mb-3" />
+                  <p className="text-sm font-medium text-muted-foreground">
+                    No jobs match your filters
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Try a different search strategy or adjust filters
+                  </p>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => {
+                      setSourceFilter('All');
+                      setAlignmentFilter('All');
+                      setWorkModeFilter('All');
+                      setSelectedLocation('All Locations');
+                    }}
+                  >
+                    Clear all filters
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+
+        {/* Table View */}
+        {viewMode === 'table' && (
+          <motion.div variants={fadeIn}>
+            <Card className="py-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[200px]">
+                        <button
+                          className="flex items-center gap-1 hover:text-foreground transition-colors"
+                          onClick={() =>
+                            setSortBy(sortBy === 'company' ? 'score' : 'company')
+                          }
+                        >
+                          Job
+                          {sortBy === 'company' && (
+                            <ChevronUp className="size-3" />
+                          )}
+                        </button>
+                      </TableHead>
+                      <TableHead className="min-w-[80px]">
+                        <button
+                          className="flex items-center gap-1 hover:text-foreground transition-colors"
+                          onClick={() =>
+                            setSortBy(sortBy === 'score' ? 'company' : 'score')
+                          }
+                        >
+                          Score
+                          {sortBy === 'score' && <ChevronUp className="size-3" />}
+                        </button>
+                      </TableHead>
+                      <TableHead>Alignment</TableHead>
+                      <TableHead className="min-w-[100px]">Source</TableHead>
+                      <TableHead className="min-w-[80px]">Mode</TableHead>
+                      <TableHead className="min-w-[100px]">
+                        <button
+                          className="flex items-center gap-1 hover:text-foreground transition-colors"
+                          onClick={() =>
+                            setSortBy(sortBy === 'date' ? 'score' : 'date')
+                          }
+                        >
+                          Date
+                          {sortBy === 'date' && <ChevronUp className="size-3" />}
+                        </button>
+                      </TableHead>
+                      <TableHead className="w-20" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredJobs.map((job) => {
+                      const score = job.matchScore ?? 0;
+                      const alignment =
+                        score >= 70
+                          ? 'Strong Match'
+                          : score >= 45
+                            ? 'Good Match'
+                            : score >= 20
+                              ? 'Stretch'
+                              : 'Ignore';
+                      const scoreColorClass = getScoreColor(score);
+                      const sourceColor = getSourceBadgeColor(job.source);
+                      const workModeColor = getWorkModeBadgeColor(job.workMode ?? '');
+
+                      // Normalize source label
+                      let sourceLabel = job.source || 'Unknown';
+                      if (sourceLabel === 'web_search') sourceLabel = 'AI Search';
+                      else if (sourceLabel.startsWith('free_api')) sourceLabel = 'Free API';
+                      else if (sourceLabel === 'career_page') sourceLabel = 'Career Page';
+
+                      return (
+                        <TableRow
+                          key={job.id}
+                          className="cursor-pointer"
+                          onClick={() => handleViewDetails(job)}
+                        >
+                          <TableCell>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {job.title}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {job.companyName} · {job.location}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold border ${scoreColorClass}`}
+                            >
+                              {score}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                score >= 70
+                                  ? 'default'
+                                  : score >= 45
+                                    ? 'secondary'
+                                    : 'outline'
+                              }
+                              className={
+                                score >= 70
+                                  ? 'bg-emerald-600 text-[10px]'
+                                  : score >= 45
+                                    ? 'bg-amber-500 text-white text-[10px]'
+                                    : 'text-[10px]'
+                              }
+                            >
+                              {alignment}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium ${sourceColor}`}
+                            >
+                              {sourceLabel}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {job.workMode && (
+                              <span
+                                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium ${workModeColor}`}
+                              >
+                                {job.workMode}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {job.datePosted
+                              ? new Date(job.datePosted).toLocaleDateString(
+                                'en-US',
+                                { month: 'short', day: 'numeric' }
+                              )
+                              : '—'}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs text-emerald-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewDetails(job);
+                              }}
+                            >
+                              View
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {filteredJobs.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-12">
+                          <div className="flex flex-col items-center">
+                            <Filter className="size-8 text-muted-foreground/40 mb-2" />
+                            <p className="text-sm text-muted-foreground">
+                              No jobs match your filters
+                            </p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Job Detail Drawer */}
+        <JobDetailDrawer
+          job={selectedJob}
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          onRefresh={loadJobs}
+        />
+      </motion.div>
+    </TooltipProvider>
   );
 }

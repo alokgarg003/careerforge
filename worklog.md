@@ -30,3 +30,33 @@ Stage Summary:
 - 17+ dead buttons wired to real API handlers
 - 514+ lines of mock/hardcoded data removed
 - Project is now fully functional with real database-driven features
+
+---
+Task ID: 2
+Agent: Main Orchestrator
+Task: Research & implement enhanced job search with company career page configs and multi-strategy search
+
+Work Log:
+- Deep research of 5 source projects (new_job_Apply-main, JOB_SPACE-main, Job_Scrapper-main, jobapply-main, Goal_2026-main)
+- Analyzed Python evaluator.py scoring algorithm (weighted: primary 12pts, secondary 5pts, MFT +10, on-call +7, cloud +5×2, SN/ITIL +8, CI/CD +4, support +6, dev penalty -30, exclusion signals)
+- Identified 3 free job APIs (Remotive, Jobicy, Arbeitnow) from jobapply-main not yet integrated
+- Identified 100+ companies with career page URLs and search-specific keyword configs from JOB_SPACE-main
+- Enhanced Prisma schema: added searchKeywords, searchLocation, searchUrlPatterns, lastScannedAt, scanResultsCount to Company model; added strategy field to SavedSearch model
+- Created src/lib/match-engine.ts: complete TypeScript port of enhanced scoring algorithm with calculateMatchScore(), buildSearchQueries(), deduplicateJobs()
+- Rewrote /api/jobs/search/route.ts: 5 search strategies (ai_web, free_api, career_page, company_bulk, smart) with real Free API integration, career page crawling via page_reader, and bulk company scanning
+- Updated /api/jobs/[id]/match/route.ts: hybrid scoring (fast rule-based + AI insights), returns bonusPoints/penaltyPoints breakdown
+- Rewrote Jobs page (jobs-page.tsx): strategy selector pills (AI Web, Free APIs, Career Page, Smart, Bulk Company), deduplication, normalized source labels, keyboard Enter search
+- Enhanced Companies page (companies-page.tsx): search keyword/location fields per company, "Scan Careers" button with live progress, search keyword badges on cards, last scanned date display
+- Updated seed data: 11 companies with targeted searchKeywords and searchLocation configs (LSEG, FedEx, DHL, Maersk, Humana, ServiceNow, OpenText, GoAnywhere/Fortra, Crossover, Capgemini, Microsoft)
+- Pushed schema changes to database and reseeded
+
+Stage Summary:
+- Zero lint errors
+- 5 search strategies implemented and working
+- Enhanced scoring: 60pt primary + 15pt secondary + 39pt bonuses - 30pt penalties (max 100)
+- 3 free job APIs integrated (Remotive, Jobicy, Arbeitnow) - instant results
+- Career page crawler: uses page_reader to extract jobs from company career URLs
+- Bulk company scan: searches top 10 targeted companies with their custom keywords
+- 11 companies pre-configured with search keywords (MFT, file transfer, servicenow, etc.)
+- Job deduplication by title+company prevents duplicates across strategies
+- Smart strategy combines free APIs (instant) + AI web search (fallback)

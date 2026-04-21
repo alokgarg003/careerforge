@@ -61,6 +61,12 @@ model Company {
   notes         String   @default("")
   priority      Int      @default(3)
   status        String   @default("targeted")
+  // Company-specific search configuration
+  searchKeywords    String   @default("")  // e.g. "MFT,file transfer,servicenow"
+  searchLocation    String   @default("")  // e.g. "Noida,Remote"
+  searchUrlPatterns String   @default("")  // e.g. "indeed.com/q-goanywhere,linkedin.com"
+  lastScannedAt     DateTime?
+  scanResultsCount  Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -73,7 +79,7 @@ model Company {
 model Job {
   id               String   @id @default(cuid())
   externalId       String   @default("")
-  source           String   @default("web_search")
+  source           String   @default("web_search")  // web_search, career_page, free_api, manual
   title            String
   companyName      String   @default("")
   location         String   @default("")
@@ -158,7 +164,8 @@ model SavedSearch {
   name       String   @default("")
   query      String   @default("")
   location   String   @default("")
-  sites      String   @default("")
+  sites      String   @default("")  // e.g. "linkedin,indeed,naukri"
+  strategy   String   @default("ai_web")  // ai_web, career_page, free_api, company_specific
   isActive   Boolean  @default(true)
   lastRunAt  DateTime?
   resultsCount Int    @default(0)
