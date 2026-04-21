@@ -1,0 +1,14 @@
+# CODEOWNERS
+# Core platform
+* @alokgarg003
+
+# Database & API layer
+/prisma/ @alokgarg003
+/src/app/api/ @alokgarg003
+/src/lib/ @alokgarg003
+
+# Frontend components
+/src/components/ @alokgarg003
+
+# Infrastructure & Config
+/.github/ @alokgarg003
