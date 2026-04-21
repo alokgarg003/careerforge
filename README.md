@@ -16,6 +16,7 @@
   <img src="https://img.shields.io/badge/Prisma-SQLite-2d3748?logo=prisma" alt="Prisma"/>
   <img src="https://img.shields.io/badge/shadcn%2Fui-New%20York-18181b" alt="shadcn/ui"/>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License"/>
+  <img src="https://github.com/alokgarg003/careerforge/actions/workflows/ci.yml/badge.svg" alt="CI"/>
 </p>
 
 <p align="center">
@@ -274,5 +275,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 <p align="center">
   Made with ❤️ by <a href="https://github.com/alokgarg003">Alok Garg</a>
 </p>
-#   c a r e e r f o r g e  
+#   c a r e e r f o r g e 
  
