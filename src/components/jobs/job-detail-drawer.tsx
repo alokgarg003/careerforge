@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -11,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { toast } from 'sonner';
 import {
   MapPin,
   Bookmark,
@@ -18,12 +20,12 @@ import {
   FileText,
   Sparkles,
   UserPlus,
-  Send,
   Briefcase,
   Clock,
   Globe,
   CheckCircle2,
   XCircle,
+  Loader2,
 } from 'lucide-react';
 import {
   Job,
@@ -36,9 +38,16 @@ interface JobDetailDrawerProps {
   job: Job | null;
   open: boolean;
   onClose: () => void;
+  onRefresh?: () => void;
 }
 
-export function JobDetailDrawer({ job, open, onClose }: JobDetailDrawerProps) {
+export function JobDetailDrawer({ job, open, onClose, onRefresh }: JobDetailDrawerProps) {
+  const [applying, setApplying] = useState(false);
+  const [tailoring, setTailoring] = useState(false);
+  const [generatingCover, setGeneratingCover] = useState(false);
+  const [savingMatch, setSavingMatch] = useState(false);
+  const [applied, setApplied] = useState(false);
+
   if (!job) return null;
 
   const score = job.matchScore ?? 0;
@@ -48,6 +57,100 @@ export function JobDetailDrawer({ job, open, onClose }: JobDetailDrawerProps) {
 
   const matchingSkills = job.skills?.slice(0, 5) ?? [];
   const missingSkills = job.skills?.slice(5) ?? [];
+
+  const handleAddToApplications = async () => {
+    if (!job) return;
+    setApplying(true);
+    try {
+      const res = await fetch('/api/applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.id, status: 'interested' }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setApplied(true);
+        toast.success('Added to Applications! Track your progress on the Applications page.');
+        onRefresh?.();
+      } else {
+        if (data.error?.includes('unique') || res.status === 409) {
+          setApplied(true);
+          toast.info('This job is already in your applications.');
+        } else {
+          toast.error(data.error || 'Failed to add to applications');
+        }
+      }
+    } catch {
+      toast.error('Failed to add to applications. Please try again.');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleTailorResume = async () => {
+    if (!job) return;
+    setTailoring(true);
+    try {
+      const res = await fetch('/api/resume/tailor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.id, type: 'tailor' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Tailored resume generated! Check Resume Intelligence page.');
+        onRefresh?.();
+      } else {
+        toast.error(data.error || 'Failed to generate tailored resume');
+      }
+    } catch {
+      toast.error('Failed to tailor resume. Please try again.');
+    } finally {
+      setTailoring(false);
+    }
+  };
+
+  const handleGenerateCoverLetter = async () => {
+    if (!job) return;
+    setGeneratingCover(true);
+    try {
+      const res = await fetch('/api/resume/tailor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.id, type: 'coverLetter' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Cover letter generated!');
+        onRefresh?.();
+      } else {
+        toast.error(data.error || 'Failed to generate cover letter');
+      }
+    } catch {
+      toast.error('Failed to generate cover letter. Please try again.');
+    } finally {
+      setGeneratingCover(false);
+    }
+  };
+
+  const handleSaveMatch = async () => {
+    if (!job) return;
+    setSavingMatch(true);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/match`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Match saved! Score: ${data.score} (${data.alignment})`);
+        onRefresh?.();
+      } else {
+        toast.error(data.error || 'Failed to save match');
+      }
+    } catch {
+      toast.error('Failed to save match. Please try again.');
+    } finally {
+      setSavingMatch(false);
+    }
+  };
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
@@ -267,23 +370,60 @@ export function JobDetailDrawer({ job, open, onClose }: JobDetailDrawerProps) {
         {/* Action Buttons */}
         <div className="border-t p-4 space-y-2">
           <div className="grid grid-cols-2 gap-2">
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm">
-              <UserPlus className="size-4" />
-              Add to Applications
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+              onClick={handleAddToApplications}
+              disabled={applying || applied}
+            >
+              {applying ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : applied ? (
+                <CheckCircle2 className="size-4" />
+              ) : (
+                <UserPlus className="size-4" />
+              )}
+              {applied ? 'Added' : 'Add to Applications'}
             </Button>
-            <Button variant="outline" className="text-sm">
-              <FileText className="size-4" />
-              Tailor Resume
+            <Button
+              variant="outline"
+              className="text-sm"
+              onClick={handleTailorResume}
+              disabled={tailoring}
+            >
+              {tailoring ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <FileText className="size-4" />
+              )}
+              {tailoring ? 'Generating...' : 'Tailor Resume'}
             </Button>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" className="text-sm">
-              <Sparkles className="size-4" />
-              Generate Cover Letter
+            <Button
+              variant="outline"
+              className="text-sm"
+              onClick={handleGenerateCoverLetter}
+              disabled={generatingCover}
+            >
+              {generatingCover ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Sparkles className="size-4" />
+              )}
+              {generatingCover ? 'Generating...' : 'Generate Cover Letter'}
             </Button>
-            <Button variant="outline" className="text-sm">
-              <Bookmark className="size-4" />
-              Save Match
+            <Button
+              variant="outline"
+              className="text-sm"
+              onClick={handleSaveMatch}
+              disabled={savingMatch}
+            >
+              {savingMatch ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Bookmark className="size-4" />
+              )}
+              {savingMatch ? 'Analyzing...' : 'Save Match'}
             </Button>
           </div>
           {job.url && (

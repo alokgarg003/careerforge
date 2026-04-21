@@ -10,7 +10,6 @@ import {
   List,
   SlidersHorizontal,
   ChevronUp,
-  ChevronDown,
   Filter,
   Loader2,
   Sparkles,
@@ -36,11 +35,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { JobCard } from '@/components/jobs/job-card';
 import { JobDetailDrawer } from '@/components/jobs/job-detail-drawer';
-import { mockJobs } from '@/lib/mock-data';
 import {
   Job,
   ViewMode,
@@ -102,7 +99,6 @@ export function JobsPage() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [savedJobs, setSavedJobs] = useState<Set<string>>(new Set());
-  const [selectedTableRows, setSelectedTableRows] = useState<Set<string>>(new Set());
   const [aiSearchLoading, setAiSearchLoading] = useState(false);
   const [matchLoading, setMatchLoading] = useState<string | null>(null);
   const [dbJobs, setDbJobs] = useState<Job[]>([]);
@@ -113,15 +109,14 @@ export function JobsPage() {
     try {
       const res = await fetch('/api/jobs');
       const data = await res.json();
-      if (data.jobs && data.jobs.length > 0) {
-        setDbJobs(data.jobs.map(transformJob));
-        setJobsLoaded(true);
+      if (Array.isArray(data) && data.length > 0) {
+        setDbJobs(data.map(transformJob));
       } else {
-        setDbJobs(mockJobs);
-        setJobsLoaded(true);
+        setDbJobs([]);
       }
+      setJobsLoaded(true);
     } catch {
-      setDbJobs(mockJobs);
+      setDbJobs([]);
       setJobsLoaded(true);
     }
   }, []);
@@ -153,7 +148,7 @@ export function JobsPage() {
       } else {
         toast.info(data.message || 'No jobs found. Try different keywords.');
       }
-    } catch (err) {
+    } catch {
       toast.error('AI search failed. Please try again.');
     } finally {
       setAiSearchLoading(false);
@@ -250,6 +245,7 @@ export function JobsPage() {
 
     return jobs;
   }, [
+    dbJobs,
     searchQuery,
     selectedLocation,
     sourceFilter,
@@ -272,21 +268,8 @@ export function JobsPage() {
     });
   };
 
-  const handleToggleTableRow = (jobId: string) => {
-    setSelectedTableRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(jobId)) next.delete(jobId);
-      else next.add(jobId);
-      return next;
-    });
-  };
-
-  const handleToggleAllRows = () => {
-    if (selectedTableRows.size === filteredJobs.length) {
-      setSelectedTableRows(new Set());
-    } else {
-      setSelectedTableRows(new Set(filteredJobs.map((j) => j.id)));
-    }
+  const handleAddJob = () => {
+    toast.info('Use AI Search to discover jobs, or add via the Applications page');
   };
 
   const activeFiltersCount =
@@ -350,7 +333,11 @@ export function JobsPage() {
                 {aiSearchLoading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
                 {aiSearchLoading ? 'Searching...' : 'AI Search'}
               </Button>
-              <Button variant="outline" className="whitespace-nowrap">
+              <Button
+                variant="outline"
+                className="whitespace-nowrap"
+                onClick={handleAddJob}
+              >
                 <Plus className="size-4" />
                 Add Job
               </Button>
@@ -458,12 +445,10 @@ export function JobsPage() {
 
           {/* Results count */}
           <div className="flex items-center gap-2 sm:ml-auto">
-            {dbJobs.length > 0 && dbJobs[0] !== mockJobs[0] && (
-              <span className="text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                <Globe className="size-3" />
-                Live Data
-              </span>
-            )}
+            <span className="text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+              <Globe className="size-3" />
+              Database
+            </span>
             <span className="text-xs text-muted-foreground">
               {filteredJobs.length} job{filteredJobs.length !== 1 ? 's' : ''} found
             </span>
@@ -510,15 +495,6 @@ export function JobsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10">
-                      <Checkbox
-                        checked={
-                          filteredJobs.length > 0 &&
-                          selectedTableRows.size === filteredJobs.length
-                        }
-                        onCheckedChange={handleToggleAllRows}
-                      />
-                    </TableHead>
                     <TableHead className="min-w-[200px]">
                       <button
                         className="flex items-center gap-1 hover:text-foreground transition-colors"
@@ -581,12 +557,6 @@ export function JobsPage() {
                         className="cursor-pointer"
                         onClick={() => handleViewDetails(job)}
                       >
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={selectedTableRows.has(job.id)}
-                            onCheckedChange={() => handleToggleTableRow(job.id)}
-                          />
-                        </TableCell>
                         <TableCell>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">
@@ -666,7 +636,7 @@ export function JobsPage() {
                   })}
                   {filteredJobs.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12">
+                      <TableCell colSpan={7} className="text-center py-12">
                         <div className="flex flex-col items-center">
                           <Filter className="size-8 text-muted-foreground/40 mb-2" />
                           <p className="text-sm text-muted-foreground">
@@ -688,6 +658,7 @@ export function JobsPage() {
         job={selectedJob}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        onRefresh={loadJobs}
       />
     </motion.div>
   );

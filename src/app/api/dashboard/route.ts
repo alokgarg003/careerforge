@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 
 export async function GET() {
   try {
-    const [totalJobs, strongMatches, activeApplications, companiesTargeted, applications] =
+    const [totalJobs, strongMatches, activeApplications, companiesTargeted, applications, topJobs] =
       await Promise.all([
         db.job.count(),
         db.jobMatch.count({
@@ -17,6 +17,18 @@ export async function GET() {
         db.company.count(),
         db.application.findMany({
           select: { status: true },
+        }),
+        db.job.findMany({
+          where: {
+            match: { isNot: null },
+          },
+          include: {
+            match: true,
+          },
+          orderBy: {
+            dateScraped: "desc",
+          },
+          take: 10,
         }),
       ]);
 
@@ -49,6 +61,7 @@ export async function GET() {
       companiesTargeted,
       pipelineCounts,
       recentActivity,
+      topJobs,
     });
   } catch (error) {
     console.error("GET /api/dashboard error:", error);

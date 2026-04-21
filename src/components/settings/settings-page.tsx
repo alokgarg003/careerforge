@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -29,6 +29,9 @@ import {
   FileJson,
   FileSpreadsheet,
   Info,
+  Target,
+  Building2,
+  Loader2,
 } from 'lucide-react'
 import {
   Card,
@@ -62,7 +65,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { useToast } from '@/hooks/use-toast'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 // ── Zod Schemas ────────────────────────────────────────────
@@ -84,6 +87,17 @@ const salarySchema = z.object({
   maxSalary: z.number().min(0, 'Must be a positive number'),
   currency: z.string(),
 })
+
+// ── Helpers ────────────────────────────────────────────────
+
+function commaStringToArray(s: string | null | undefined): string[] {
+  if (!s) return []
+  return s.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
+}
+
+function arrayToCommaString(arr: string[]): string {
+  return arr.join(',')
+}
 
 // ── Tag Input Component ────────────────────────────────────
 
@@ -166,22 +180,54 @@ function AnimatedCard({
   )
 }
 
+// ── Loading Skeleton ───────────────────────────────────────
+
+function SettingsSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="h-8 w-48 bg-muted animate-pulse rounded" />
+        <div className="h-4 w-80 bg-muted animate-pulse rounded mt-2" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader>
+              <div className="h-6 w-40 bg-muted animate-pulse rounded" />
+              <div className="h-4 w-60 bg-muted animate-pulse rounded mt-1" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {Array.from({ length: 6 }).map((_, j) => (
+                <div key={j} className="h-10 bg-muted animate-pulse rounded" />
+              ))}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Component ─────────────────────────────────────────
 
 export default function SettingsPage() {
-  const { toast } = useToast()
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState<string | null>(null)
+  const [jobsCount, setJobsCount] = useState(0)
+  const [applicationsCount, setApplicationsCount] = useState(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Profile State ──
   const [profileData, setProfileData] = useState({
-    name: 'Alok Garg',
-    email: 'alok.garg@email.com',
-    phone: '+91 98765 43210',
-    currentRole: 'Application Support Engineer',
-    company: 'Capgemini',
-    location: 'Noida, India',
-    experience: 1.5,
-    linkedinUrl: 'https://linkedin.com/in/alokgarg',
-    githubUrl: 'https://github.com/alokgarg',
+    name: '',
+    email: '',
+    phone: '',
+    currentRole: '',
+    company: '',
+    location: '',
+    experience: 0,
+    linkedinUrl: '',
+    githubUrl: '',
   })
 
   const profileForm = useForm({
@@ -190,25 +236,11 @@ export default function SettingsPage() {
   })
 
   // ── Skills State ──
-  const [primarySkills, setPrimarySkills] = useState([
-    'python', 'sql', 'linux', 'azure devops', 'powershell',
-    'rest apis', 'docker', 'git', 'jenkins', 'kubernetes',
-    'javascript', 'bash',
-  ])
-  const [secondarySkills, setSecondarySkills] = useState([
-    'itil', 'servicenow', 'jira', 'confluence', 'oracle db',
-    'mongodb', 'networking', 'ansible', 'terraform', 'grafana',
-  ])
-  const [excludeSignals, setExcludeSignals] = useState([
-    'internship', 'fresher', 'walk-in', 'immediate joiner',
-  ])
-  const [targetRoles, setTargetRoles] = useState([
-    'devops engineer', 'sre engineer', 'platform engineer',
-    'cloud engineer', 'application support engineer',
-  ])
-  const [preferredLocations, setPreferredLocations] = useState([
-    'noida', 'bangalore', 'hyderabad', 'pune', 'remote',
-  ])
+  const [primarySkills, setPrimarySkills] = useState<string[]>([])
+  const [secondarySkills, setSecondarySkills] = useState<string[]>([])
+  const [excludeSignals, setExcludeSignals] = useState<string[]>([])
+  const [targetRoles, setTargetRoles] = useState<string[]>([])
+  const [preferredLocations, setPreferredLocations] = useState<string[]>([])
 
   // ── Salary State ──
   const [salaryData, setSalaryData] = useState({
@@ -219,53 +251,383 @@ export default function SettingsPage() {
 
   // ── Search Preferences State ──
   const [searchPrefs, setSearchPrefs] = useState({
-    defaultLocation: 'Noida, India',
+    defaultLocation: '',
     jobType: 'full-time',
     workMode: 'hybrid',
     autoMatchThreshold: 65,
   })
 
+  // ── Load profile and counts on mount ──
+  const loadProfile = useCallback(async () => {
+    try {
+      const res = await fetch('/api/profile')
+      if (!res.ok) throw new Error('Failed to fetch profile')
+      const profile = await res.json()
+
+      // Populate profile form
+      const formValues = {
+        name: profile.name || '',
+        email: profile.email || '',
+        phone: profile.phone || '',
+        currentRole: profile.currentRole || '',
+        company: profile.currentCompany || '',
+        location: profile.location || '',
+        experience: profile.experienceYears ?? 0,
+        linkedinUrl: profile.linkedinUrl || '',
+        githubUrl: profile.githubUrl || '',
+      }
+      setProfileData(formValues)
+      profileForm.reset(formValues)
+
+      // Populate skills
+      setPrimarySkills(commaStringToArray(profile.primarySkills))
+      setSecondarySkills(commaStringToArray(profile.secondarySkills))
+      setExcludeSignals(commaStringToArray(profile.excludeSignals))
+      setTargetRoles(commaStringToArray(profile.targetRoles))
+      setPreferredLocations(commaStringToArray(profile.preferredLocations))
+
+      // Populate salary
+      setSalaryData({
+        minSalary: profile.salaryMin ?? 8,
+        maxSalary: profile.salaryMax ?? 25,
+        currency: profile.salaryCurrency || 'INR',
+      })
+
+      // Populate search prefs (use location as default location)
+      setSearchPrefs((prev) => ({
+        ...prev,
+        defaultLocation: profile.location || '',
+      }))
+    } catch {
+      toast.error('Failed to load profile data')
+    }
+  }, [profileForm])
+
+  const loadCounts = useCallback(async () => {
+    try {
+      const [jobsRes, appsRes] = await Promise.all([
+        fetch('/api/jobs'),
+        fetch('/api/applications'),
+      ])
+      if (jobsRes.ok) {
+        const jobs = await jobsRes.json()
+        setJobsCount(Array.isArray(jobs) ? jobs.length : 0)
+      }
+      if (appsRes.ok) {
+        const apps = await appsRes.json()
+        setApplicationsCount(Array.isArray(apps) ? apps.length : 0)
+      }
+    } catch {
+      // Silent fail for counts
+    }
+  }, [])
+
+  useEffect(() => {
+    Promise.all([loadProfile(), loadCounts()]).finally(() => setLoading(false))
+  }, [loadProfile, loadCounts])
+
   // ── Handlers ──
-  const handleSaveProfile = () => {
-    const values = profileForm.getValues()
-    setProfileData(values as typeof profileData)
-    toast({ title: 'Profile settings saved!' })
+
+  const handleSaveProfile = async () => {
+    const valid = await profileForm.trigger()
+    if (!valid) return
+
+    setSaving('profile')
+    try {
+      const values = profileForm.getValues()
+      const res = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: values.name,
+          email: values.email,
+          phone: values.phone,
+          currentRole: values.currentRole,
+          currentCompany: values.company,
+          location: values.location,
+          experienceYears: values.experience,
+          linkedinUrl: values.linkedinUrl,
+          githubUrl: values.githubUrl,
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to save profile')
+      toast.success('Profile settings saved!')
+    } catch {
+      toast.error('Failed to save profile. Please try again.')
+    } finally {
+      setSaving(null)
+    }
   }
 
-  const handleSaveSkills = () => {
-    toast({ title: 'Skills configuration saved!' })
+  const handleSaveSkills = async () => {
+    setSaving('skills')
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          primarySkills: arrayToCommaString(primarySkills),
+          secondarySkills: arrayToCommaString(secondarySkills),
+          excludeSignals: arrayToCommaString(excludeSignals),
+          targetRoles: arrayToCommaString(targetRoles),
+          preferredLocations: arrayToCommaString(preferredLocations),
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to save skills')
+      toast.success('Skills configuration saved!')
+    } catch {
+      toast.error('Failed to save skills. Please try again.')
+    } finally {
+      setSaving(null)
+    }
   }
 
-  const handleSaveSalary = () => {
-    toast({ title: 'Salary preferences saved!' })
+  const handleSaveSalary = async () => {
+    setSaving('salary')
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          salaryMin: salaryData.minSalary,
+          salaryMax: salaryData.maxSalary,
+          salaryCurrency: salaryData.currency,
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to save salary')
+      toast.success('Salary preferences saved!')
+    } catch {
+      toast.error('Failed to save salary preferences. Please try again.')
+    } finally {
+      setSaving(null)
+    }
   }
 
-  const handleSaveSearch = () => {
-    toast({ title: 'Search preferences saved!' })
+  const handleSaveSearch = async () => {
+    setSaving('search')
+    try {
+      // Save preferredLocations from the default location
+      const res = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preferredLocations: searchPrefs.defaultLocation
+            ? searchPrefs.defaultLocation
+            : undefined,
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to save preferences')
+      toast.success('Search preferences saved!')
+    } catch {
+      toast.error('Failed to save search preferences. Please try again.')
+    } finally {
+      setSaving(null)
+    }
   }
 
-  const handleExportJSON = () => {
-    toast({ title: 'Data exported as JSON!' })
+  const handleExportJSON = async () => {
+    try {
+      const [jobsRes, appsRes, companiesRes, profileRes] = await Promise.all([
+        fetch('/api/jobs'),
+        fetch('/api/applications'),
+        fetch('/api/companies'),
+        fetch('/api/profile'),
+      ])
+
+      const jobs = jobsRes.ok ? await jobsRes.json() : []
+      const applications = appsRes.ok ? await appsRes.json() : []
+      const companies = companiesRes.ok ? await companiesRes.json() : []
+      const profile = profileRes.ok ? await profileRes.json() : {}
+
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        profile,
+        jobs,
+        applications,
+        companies,
+      }
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: 'application/json',
+      })
+      const date = new Date().toISOString().slice(0, 10)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `careerforge-export-${date}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast.success('Data exported as JSON!')
+    } catch {
+      toast.error('Failed to export data. Please try again.')
+    }
   }
 
-  const handleExportCSV = () => {
-    toast({ title: 'Data exported as CSV!' })
+  const handleExportCSV = async () => {
+    try {
+      const res = await fetch('/api/jobs')
+      if (!res.ok) throw new Error('Failed to fetch jobs')
+      const jobs: any[] = await res.json()
+
+      const headers = ['title', 'company', 'location', 'source', 'score', 'alignment', 'date']
+      const csvRows: string[] = [headers.join(',')]
+
+      for (const job of jobs) {
+        const row = [
+          `"${(job.title || '').replace(/"/g, '""')}"`,
+          `"${(job.companyName || '').replace(/"/g, '""')}"`,
+          `"${(job.location || '').replace(/"/g, '""')}"`,
+          `"${(job.source || '').replace(/"/g, '""')}"`,
+          job.match?.score ?? '',
+          `"${(job.match?.alignment || '').replace(/"/g, '""')}"`,
+          job.dateScraped ? new Date(job.dateScraped).toISOString().slice(0, 10) : '',
+        ]
+        csvRows.push(row.join(','))
+      }
+
+      const csvString = csvRows.join('\n')
+      const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' })
+      const date = new Date().toISOString().slice(0, 10)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `careerforge-jobs-${date}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast.success('Jobs exported as CSV!')
+    } catch {
+      toast.error('Failed to export CSV. Please try again.')
+    }
   }
 
   const handleImport = () => {
-    toast({ title: 'Data imported successfully!' })
+    fileInputRef.current?.click()
   }
 
-  const handleClearJobs = () => {
-    toast({ title: 'All jobs cleared.', description: 'This action cannot be undone.', variant: 'destructive' })
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+
+      let importedCount = 0
+
+      // Import profile
+      if (data.profile) {
+        await fetch('/api/profile', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data.profile),
+        })
+        importedCount++
+        // Refresh profile
+        await loadProfile()
+      }
+
+      // Import jobs
+      if (Array.isArray(data.jobs)) {
+        for (const job of data.jobs) {
+          await fetch('/api/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: job.title,
+              companyName: job.companyName,
+              location: job.location,
+              url: job.url,
+              description: job.description,
+              source: job.source || 'import',
+              skills: typeof job.skills === 'string' ? job.skills : JSON.stringify(job.skills || []),
+              workMode: job.workMode,
+              jobType: job.jobType,
+              experienceRange: job.experienceRange,
+              salaryMin: job.salaryMin,
+              salaryMax: job.salaryMax,
+              isRemote: job.isRemote,
+              companyIndustry: job.companyIndustry,
+              status: job.status || 'new',
+            }),
+          })
+        }
+        importedCount += data.jobs.length
+      }
+
+      // Refresh counts
+      await loadCounts()
+      toast.success(`Data imported successfully! (${importedCount} items)`)
+    } catch {
+      toast.error('Failed to import data. Please ensure the file is valid JSON.')
+    } finally {
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
   }
 
-  const handleClearApplications = () => {
-    toast({ title: 'All applications cleared.', description: 'This action cannot be undone.', variant: 'destructive' })
+  const handleClearJobs = async () => {
+    try {
+      const res = await fetch('/api/jobs')
+      if (!res.ok) throw new Error('Failed to fetch jobs')
+      const jobs: any[] = await res.json()
+
+      let deletedCount = 0
+      for (const job of jobs) {
+        const delRes = await fetch(`/api/jobs/${job.id}`, { method: 'DELETE' })
+        if (delRes.ok) deletedCount++
+      }
+
+      setJobsCount(0)
+      toast.success(`Cleared ${deletedCount} jobs from the database.`)
+    } catch {
+      toast.error('Failed to clear jobs. Please try again.')
+    }
+  }
+
+  const handleClearApplications = async () => {
+    try {
+      const res = await fetch('/api/applications')
+      if (!res.ok) throw new Error('Failed to fetch applications')
+      const apps: any[] = await res.json()
+
+      let deletedCount = 0
+      for (const app of apps) {
+        const delRes = await fetch(`/api/applications/${app.id}`, { method: 'DELETE' })
+        if (delRes.ok) deletedCount++
+      }
+
+      setApplicationsCount(0)
+      toast.success(`Cleared ${deletedCount} applications from the database.`)
+    } catch {
+      toast.error('Failed to clear applications. Please try again.')
+    }
+  }
+
+  // ── Render ──
+
+  if (loading) {
+    return <SettingsSkeleton />
   }
 
   return (
     <div className="space-y-6">
+      {/* Hidden file input for import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -329,6 +691,9 @@ export default function SettingsPage() {
                     {...profileForm.register('phone')}
                     placeholder="+91 98765 43210"
                   />
+                  {profileForm.formState.errors.phone && (
+                    <p className="text-xs text-destructive">{profileForm.formState.errors.phone.message}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="currentRole" className="flex items-center gap-1.5">
@@ -339,19 +704,25 @@ export default function SettingsPage() {
                     {...profileForm.register('currentRole')}
                     placeholder="Your current role"
                   />
+                  {profileForm.formState.errors.currentRole && (
+                    <p className="text-xs text-destructive">{profileForm.formState.errors.currentRole.message}</p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="company" className="flex items-center gap-1.5">
-                    <Building className="size-3.5" /> Company
+                    <Building2 className="size-3.5" /> Company
                   </Label>
                   <Input
                     id="company"
                     {...profileForm.register('company')}
                     placeholder="Current company"
                   />
+                  {profileForm.formState.errors.company && (
+                    <p className="text-xs text-destructive">{profileForm.formState.errors.company.message}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="location" className="flex items-center gap-1.5">
@@ -362,6 +733,9 @@ export default function SettingsPage() {
                     {...profileForm.register('location')}
                     placeholder="City, Country"
                   />
+                  {profileForm.formState.errors.location && (
+                    <p className="text-xs text-destructive">{profileForm.formState.errors.location.message}</p>
+                  )}
                 </div>
               </div>
 
@@ -412,8 +786,13 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <Button onClick={handleSaveProfile} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
-                <Save className="size-4 mr-2" /> Save Profile
+              <Button onClick={handleSaveProfile} disabled={saving === 'profile'} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+                {saving === 'profile' ? (
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="size-4 mr-2" />
+                )}
+                {saving === 'profile' ? 'Saving...' : 'Save Profile'}
               </Button>
             </CardContent>
           </Card>
@@ -497,8 +876,13 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <Button onClick={handleSaveSkills} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
-                <Save className="size-4 mr-2" /> Save Skills
+              <Button onClick={handleSaveSkills} disabled={saving === 'skills'} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+                {saving === 'skills' ? (
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="size-4 mr-2" />
+                )}
+                {saving === 'skills' ? 'Saving...' : 'Save Skills'}
               </Button>
             </CardContent>
           </Card>
@@ -551,6 +935,7 @@ export default function SettingsPage() {
                     <SelectItem value="USD">$ USD (US Dollar)</SelectItem>
                     <SelectItem value="EUR">€ EUR (Euro)</SelectItem>
                     <SelectItem value="GBP">£ GBP (British Pound)</SelectItem>
+                    <SelectItem value="LPA">LPA (Lakhs Per Annum)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -560,7 +945,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">Salary Range</span>
                   <span className="text-sm text-emerald-600 font-semibold">
-                    {salaryData.currency === 'INR' ? '₹' : salaryData.currency === 'USD' ? '$' : '€'}
+                    {salaryData.currency === 'INR' ? '₹' : salaryData.currency === 'USD' ? '$' : salaryData.currency === 'GBP' ? '£' : salaryData.currency === 'EUR' ? '€' : ''}
                     {salaryData.minSalary}L – {salaryData.maxSalary}L
                   </span>
                 </div>
@@ -579,8 +964,13 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <Button onClick={handleSaveSalary} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
-                <Save className="size-4 mr-2" /> Save Salary Preferences
+              <Button onClick={handleSaveSalary} disabled={saving === 'salary'} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+                {saving === 'salary' ? (
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="size-4 mr-2" />
+                )}
+                {saving === 'salary' ? 'Saving...' : 'Save Salary Preferences'}
               </Button>
             </CardContent>
           </Card>
@@ -692,8 +1082,13 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <Button onClick={handleSaveSearch} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
-                <Save className="size-4 mr-2" /> Save Search Preferences
+              <Button onClick={handleSaveSearch} disabled={saving === 'search'} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+                {saving === 'search' ? (
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="size-4 mr-2" />
+                )}
+                {saving === 'search' ? 'Saving...' : 'Save Search Preferences'}
               </Button>
             </CardContent>
           </Card>
@@ -714,7 +1109,9 @@ export default function SettingsPage() {
                 <Database className="size-8 text-muted-foreground" />
                 <div className="flex-1">
                   <p className="text-sm font-medium">Database Size</p>
-                  <p className="text-xs text-muted-foreground">411 jobs, 156 applications, 12.4 MB total</p>
+                  <p className="text-xs text-muted-foreground">
+                    {jobsCount} job{jobsCount !== 1 ? 's' : ''}, {applicationsCount} application{applicationsCount !== 1 ? 's' : ''}
+                  </p>
                 </div>
                 <Badge variant="outline" className="text-xs">SQLite</Badge>
               </div>
@@ -740,7 +1137,7 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="w-full">
+                      <Button variant="destructive" className="w-full" disabled={jobsCount === 0}>
                         <Trash2 className="size-4 mr-2" /> Clear All Jobs
                       </Button>
                     </AlertDialogTrigger>
@@ -748,7 +1145,7 @@ export default function SettingsPage() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Clear All Jobs?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will permanently delete all {411} saved jobs from your database.
+                          This will permanently delete all {jobsCount} saved job{jobsCount !== 1 ? 's' : ''} from your database.
                           This action cannot be undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
@@ -763,7 +1160,7 @@ export default function SettingsPage() {
 
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="w-full">
+                      <Button variant="destructive" className="w-full" disabled={applicationsCount === 0}>
                         <Trash2 className="size-4 mr-2" /> Clear All Applications
                       </Button>
                     </AlertDialogTrigger>
@@ -771,7 +1168,7 @@ export default function SettingsPage() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Clear All Applications?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will permanently delete all {156} application records from your database.
+                          This will permanently delete all {applicationsCount} application record{applicationsCount !== 1 ? 's' : ''} from your database.
                           This action cannot be undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
@@ -851,52 +1248,5 @@ export default function SettingsPage() {
         </AnimatedCard>
       </div>
     </div>
-  )
-}
-
-// Needed for the icon import
-function Target({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <circle cx="12" cy="12" r="10" />
-      <circle cx="12" cy="12" r="6" />
-      <circle cx="12" cy="12" r="2" />
-    </svg>
-  )
-}
-
-function Building({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <rect width="16" height="20" x="4" y="2" rx="2" ry="2" />
-      <path d="M9 22v-4h6v4" />
-      <path d="M8 6h.01" />
-      <path d="M16 6h.01" />
-      <path d="M12 6h.01" />
-      <path d="M12 10h.01" />
-      <path d="M12 14h.01" />
-      <path d="M16 10h.01" />
-      <path d="M16 14h.01" />
-      <path d="M8 10h.01" />
-      <path d="M8 14h.01" />
-    </svg>
   )
 }

@@ -103,146 +103,6 @@ interface Application {
   createdAt: string;
 }
 
-// ─── Mock Data ──────────────────────────────────────────────────
-const initialApplications: Application[] = [
-  {
-    id: 'app-001',
-    jobTitle: 'Senior Software Engineer',
-    company: 'Microsoft',
-    status: 'interviewing',
-    priority: 'high',
-    appliedDate: '2026-03-15',
-    interviewDate: '2026-04-25',
-    platform: 'Referral',
-    hrContact: { name: 'Priya Sharma', email: 'priya.sharma@microsoft.com', phone: '+91 98765 43210' },
-    notes: 'Round 2 cleared. System design round scheduled. Prepare distributed systems topics.',
-    followedUp: true,
-    createdAt: '2026-03-10',
-  },
-  {
-    id: 'app-002',
-    jobTitle: 'Staff Engineer - Platform',
-    company: 'Google',
-    status: 'applied',
-    priority: 'high',
-    appliedDate: '2026-04-02',
-    platform: 'Company Site',
-    hrContact: { name: 'Rahul Verma', email: 'rahul.v@google.com', phone: '' },
-    notes: 'Applied through Google careers portal. Strong match for L5/L6 role.',
-    followedUp: false,
-    createdAt: '2026-03-28',
-  },
-  {
-    id: 'app-003',
-    jobTitle: 'SDE II - MFT Division',
-    company: 'OpenText',
-    status: 'offered',
-    priority: 'high',
-    appliedDate: '2026-02-20',
-    interviewDate: '2026-03-15',
-    offerAmount: '₹42 LPA',
-    platform: 'Naukri',
-    hrContact: { name: 'Anita Gupta', email: 'anita.gupta@opentext.com', phone: '+91 99887 76655' },
-    notes: 'Offer received! ₹42 LPA base + stocks. Negotiating final numbers. Deadline Apr 30.',
-    followedUp: true,
-    createdAt: '2026-02-15',
-  },
-  {
-    id: 'app-004',
-    jobTitle: 'Technical Lead - Integration',
-    company: 'GoAnywhere (Fortran)',
-    status: 'interviewing',
-    priority: 'high',
-    appliedDate: '2026-03-25',
-    interviewDate: '2026-04-22',
-    platform: 'LinkedIn',
-    hrContact: { name: 'Vikram Singh', email: 'vikram@goanywhere.io', phone: '+91 87654 32109' },
-    notes: 'MFT domain specialist role. Cleared tech screen. Final round with CTO.',
-    followedUp: true,
-    createdAt: '2026-03-20',
-  },
-  {
-    id: 'app-005',
-    jobTitle: 'Senior Developer - B2B Connect',
-    company: 'IBM Sterling',
-    status: 'applied',
-    priority: 'medium',
-    appliedDate: '2026-04-10',
-    platform: 'Company Site',
-    hrContact: { name: '', email: '', phone: '' },
-    notes: 'Applied for Sterling B2B Integrator team. MFT + supply chain focus.',
-    followedUp: false,
-    createdAt: '2026-04-08',
-  },
-  {
-    id: 'app-006',
-    jobTitle: 'Solutions Architect',
-    company: 'Capgemini',
-    status: 'interested',
-    priority: 'medium',
-    appliedDate: '',
-    platform: 'LinkedIn',
-    hrContact: { name: '', email: '', phone: '' },
-    notes: 'Hybrid role in NCR. Good for work-life balance. Check salary bands.',
-    followedUp: false,
-    createdAt: '2026-04-12',
-  },
-  {
-    id: 'app-007',
-    jobTitle: 'Senior Backend Engineer',
-    company: 'Nagarro',
-    status: 'applied',
-    priority: 'medium',
-    appliedDate: '2026-04-05',
-    platform: 'Naukri',
-    hrContact: { name: 'Deepak Kumar', email: 'deepak.k@nagarro.com', phone: '' },
-    notes: 'Applied through Naukri. Gurgaon office. Java/Go stack.',
-    followedUp: false,
-    createdAt: '2026-04-01',
-  },
-  {
-    id: 'app-008',
-    jobTitle: 'Principal Engineer',
-    company: 'Snyk',
-    status: 'interested',
-    priority: 'low',
-    appliedDate: '',
-    platform: 'AngelList',
-    hrContact: { name: '', email: '', phone: '' },
-    notes: 'Remote-first security company. Interesting product but lower base comp.',
-    followedUp: false,
-    createdAt: '2026-04-14',
-  },
-  {
-    id: 'app-009',
-    jobTitle: 'Tech Lead - Observability',
-    company: 'Grafana Labs',
-    status: 'rejected',
-    priority: 'medium',
-    appliedDate: '2026-03-01',
-    interviewDate: '2026-03-20',
-    platform: 'Company Site',
-    hrContact: { name: 'Sarah Chen', email: 'sarah@grafana.com', phone: '' },
-    notes: 'Rejected after final round. Feedback: not enough distributed tracing experience.',
-    followedUp: true,
-    createdAt: '2026-02-25',
-  },
-  {
-    id: 'app-010',
-    jobTitle: 'SDE II',
-    company: 'Amazon',
-    status: 'rejected',
-    priority: 'high',
-    appliedDate: '2026-02-10',
-    interviewDate: '2026-03-05',
-    platform: 'Referral',
-    hrContact: { name: 'Alex Johnson', email: 'alexj@amazon.com', phone: '' },
-    notes: 'Loop failed. Leadership principles round was tough. Can reapply in 6 months.',
-    followedUp: true,
-    createdAt: '2026-02-05',
-  },
-];
-
 // ─── Constants ──────────────────────────────────────────────────
 const STATUS_CONFIG: Record<ApplicationStatus, { label: string; color: string; bgColor: string; borderColor: string; headerDot: string }> = {
   interested: { label: 'Interested', color: 'text-zinc-400', bgColor: 'bg-zinc-400/10', borderColor: 'border-zinc-400/30', headerDot: 'bg-zinc-400' },
@@ -495,7 +355,7 @@ function ApplicationDetailDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Briefcase className="h-5 w-5 text-emerald-500" />
-            {form.id.startsWith('app-') && !initialApplications.find(a => a.id === form.id) ? 'Add Application' : 'Edit Application'}
+            {form.id.startsWith('app-new') ? 'Add Application' : 'Edit Application'}
           </DialogTitle>
           <DialogDescription>
             Track your job application details and progress
@@ -907,7 +767,7 @@ function ListView({
 // ─── Main Component ─────────────────────────────────────────────
 export default function ApplicationsPage() {
   const [dbApplications, setDbApplications] = useState<Application[] | null>(null);
-  const applications = dbApplications || initialApplications;
+  const applications = dbApplications || [];
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
 
   // Load applications from DB on mount
@@ -938,8 +798,8 @@ export default function ApplicationsPage() {
         createdAt: app.createdAt as string,
       }));
       setDbApplications(mapped);
-    } catch {
-      console.warn('Failed to load applications from DB, using mock data');
+    } catch (err) {
+      console.error('Failed to load applications:', err);
     }
   }, []);
 
@@ -989,7 +849,7 @@ export default function ApplicationsPage() {
 
   const handleSave = async (updated: Application) => {
     try {
-      const isNewLocal = updated.id.startsWith('app-');
+      const isNewLocal = updated.id.startsWith('app-new');
 
       if (isNewLocal) {
         // Create a Job first, then the Application
@@ -1047,11 +907,6 @@ export default function ApplicationsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (id.startsWith('app-')) {
-      // Mock data — cannot delete from DB
-      toast.info('Mock data cannot be deleted');
-      return;
-    }
     try {
       const res = await fetch(`/api/applications/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete');
